@@ -488,7 +488,7 @@ namespace hdt
 
 extern "C" {
 
-	constexpr UInt32 hdtSMP64Version = 105004; // patch version + 10^2 * minor version + 10^5 * major version
+	constexpr UInt32 hdtSMP64Version = 200102; // patch version + 10^2 * minor version + 10^5 * major version
 
 #ifdef ANNIVERSARY_EDITION
 	__declspec(dllexport) SKSEPluginVersionData SKSEPlugin_Version =
@@ -578,6 +578,7 @@ extern "C" {
 
 		hdt::g_frameEventDispatcher.addListener(hdt::ActorManager::instance());
 		hdt::g_frameEventDispatcher.addListener(hdt::SkyrimPhysicsWorld::get());
+		hdt::g_frameSyncEventDispatcher.addListener(hdt::SkyrimPhysicsWorld::get());
 		hdt::g_shutdownEventDispatcher.addListener(hdt::ActorManager::instance());
 		hdt::g_shutdownEventDispatcher.addListener(hdt::SkyrimPhysicsWorld::get());
 		hdt::g_armorAttachEventDispatcher.addListener(hdt::ActorManager::instance());

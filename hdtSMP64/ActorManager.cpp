@@ -61,6 +61,48 @@ namespace hdt
 		return findNode(skeleton, shouldFix ? "NPC Root [Root]" : "NPC");
 	}
 
+	void ActorManager::fixArmorNameMaps()
+	{
+		auto& skeletons = instance()->getSkeletons();
+		for (auto& skeleton : skeletons)
+			if (skeleton.mustFixOneArmorMap)
+			{
+				auto& armors = skeleton.getArmors();
+				for (auto& armor : armors)
+				{
+					if (armor.mustFixNameMap)
+					{
+						if (armor.armorWorn)
+							if (armor.armorWorn->m_name)
+							{
+								std::string armorNewMeshName(armor.armorWorn->m_name);
+								if (!armorNewMeshName.empty() && armor.armorCurrentMeshName.compare(armorNewMeshName) != 0)
+								{
+									auto& armorNameMap = armor.physicsFile.second;
+									hdt::DefaultBBP::NameMap tempNameMap;
+									for (auto& [setName, set] : armorNameMap)
+										// ... and we found the old mesh name in the armor nameMap,...
+										if (armor.armorCurrentMeshName.compare(setName) == 0)
+										{
+											// We add the new mesh name to the list of mesh names for the original mesh name (sic).
+											set.insert({ armorNewMeshName });
+											// We plan a new entry in the armor nameMap.
+											tempNameMap.insert({ armorNewMeshName, { armorNewMeshName } });
+											// This armor is fixed.
+											armor.mustFixNameMap = false;
+											armor.armorCurrentMeshName = armorNewMeshName;
+										}
+									// We add the planned entries.
+									for (auto& [setName, set] : tempNameMap)
+										armorNameMap.insert({ setName, set });
+								}
+							}
+					}
+				}
+				skeleton.mustFixOneArmorMap = false;
+			}
+	}
+
 	void ActorManager::onEvent(const ArmorAttachEvent& e)
 	{
 		// No armor is ever attached to a lurker skeleton, thus we don't need to test.
@@ -71,6 +113,8 @@ namespace hdt
 
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		if (m_shutdown) return;
+
+		fixArmorNameMaps();
 
 		auto& skeleton = getSkeletonData(e.skeleton);
 		if (e.hasAttached)
@@ -100,11 +144,13 @@ namespace hdt
 
 	void ActorManager::onEvent(const ArmorDetachEvent& e)
 	{
-		if (!e.actor || !e.hasDetached)
+		if (!e.actor || !e.hasDetached || !instance()->m_disableSMPHairWhenWigEquipped)
 			return;
 
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		if (m_shutdown) return;
+
+		fixArmorNameMaps();
 
 		Skeleton* s = get3rdPersonSkeleton(e.actor);
 		setHeadActiveIfNoHairArmor(e.actor, s);
@@ -133,6 +179,10 @@ namespace hdt
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		if (m_shutdown) return;
 
+		_DMESSAGE("Processing MenuOpenCloseEvent");
+
+		fixArmorNameMaps();
+
 		setSkeletonsActive();
 
 		for (auto& i : m_skeletons)
@@ -141,16 +191,11 @@ namespace hdt
 
 	void ActorManager::onEvent(const FrameEvent& e)
 	{
-		// Other events have to be managed. The FrameEvent is the only event that we can drop,
-		// we always have one later where we'll be able to manage the passed time.
-		// We drop this execution when the lock is already taken; in that case, we would execute the code later.
-		// It is better to drop it now, and let the next frame manage it.
-		// Moreover, dropping a locked part of the code allows to reduce the total wait times.
-		// Finally, some skse mods issue FrameEvents, this mechanism manages the case where they issue too many.
-		std::unique_lock<decltype(m_lock)> lock(m_lock, std::try_to_lock);
-		if (!lock.owns_lock()) return;
+		std::lock_guard<decltype(m_lock)> l(m_lock);
 
-		setSkeletonsActive();
+		fixArmorNameMaps();
+
+		setSkeletonsActive(true);
 	}
 
 	//NiAVObject* Actor::CalculateLOS_1405FD2C0(Actor *aActor, NiPoint3 *aTargetPosition, NiPoint3 *aRayHitPosition, float aViewCone)
@@ -159,8 +204,20 @@ namespace hdt
 	typedef NiAVObject* (*_Actor_CalculateLOS)(Actor* aActor, NiPoint3* aTargetPosition, NiPoint3* aRayHitPosition, float aViewCone);
 	RelocAddr<_Actor_CalculateLOS> Actor_CalculateLOS(offset::Actor_CalculateLOS);
 
+	inline NiNode* ActorManager::getCameraNode()
+	{
+#ifdef SKYRIMVR
+		// Camera info taken from Shizof's cpbc under MIT. https://www.nexusmods.com/skyrimspecialedition/mods/21224?tab=files
+		if (!(*g_thePlayer)->loadedState)
+			return nullptr;
+		return (*g_thePlayer)->loadedState->node;
+#else
+		return PlayerCamera::GetSingleton()->cameraNode;
+#endif
+	}
+
 	// @brief This function is called by different events, with different locking needs, and is therefore extracted from the events.
-	void ActorManager::setSkeletonsActive()
+	void ActorManager::setSkeletonsActive(const bool updateMetrics)
 	{
 		if (m_shutdown) return;
 
@@ -169,19 +226,14 @@ namespace hdt
 		auto& playerCharacter = std::find_if(m_skeletons.begin(), m_skeletons.end(), [](Skeleton& s) { return s.isPlayerCharacter(); });
 		auto playerCell = (playerCharacter != m_skeletons.end() && playerCharacter->skeleton->m_parent) ? playerCharacter->skeleton->m_parent->m_parent : nullptr;
 
-		// We get the camera, its position and orientation.
-		// TODO Can this be reconciled between VR and AE/SE?
-#ifndef SKYRIMVR
-		const auto cameraNode = PlayerCamera::GetSingleton()->cameraNode;
-#else
-		// Camera info taken from Shizof's cpbc under MIT. https://www.nexusmods.com/skyrimspecialedition/mods/21224?tab=files
-		if (!(*g_thePlayer)->loadedState)
+		const auto cameraNode = getCameraNode();
+		if (!cameraNode)
 			return;
-		const auto cameraNode = (*g_thePlayer)->loadedState->node;
-#endif
+		// We get the camera, its position and orientation.
 		const auto cameraTransform = cameraNode->m_worldTransform;
 		const auto cameraPosition = cameraTransform.pos;
 		const auto cameraOrientation = cameraTransform.rot * NiPoint3(0., 1., 0.); // The camera matrix is relative to the world.
+		this->m_cameraPositionDuringFrame = cameraPosition;
 
 		std::for_each(m_skeletons.begin(), m_skeletons.end(), [&](Skeleton& skel)
 			{
@@ -269,26 +321,32 @@ namespace hdt
 		}
 
 		const auto world = SkyrimPhysicsWorld::get();
-		if (!world->isSuspended() && // do not do metrics while paused
-			frameCount++ % world->min_fps == 0) // check every min-fps frames (i.e., a stable 60 fps should wait for 1 second)
+
+		// We share the same doMetrics condition here and in hdtSkyrimPhysicsWorld to avoid any gap between both.
+		// The evaluation is done here rather than in hdtSkyrimPhysicsWorld because this event is called first.
+		world->m_doMetrics = updateMetrics &&                    // do not do metrics on a MenuOpenCloseEvent
+			                 !world->isSuspended() &&            // do not do metrics while paused
+		                     frameCount++ % world->min_fps == 0; // check every min-fps frames (i.e., a stable 60 fps should wait for 1 second)
+
+		if (world->m_doMetrics)
 		{
-			const auto processing_time = world->m_averageProcessingTime;
+			const auto averageProcessingTimeInMainLoop = world->m_averageSMPProcessingTimeInMainLoop;
 			// 30% of processing time is in hdt per profiling;
 			// Setting it higher provides more time for hdt processing and can activate more skeletons.
 			const auto target_time = world->m_timeTick * world->m_percentageOfFrameTime;
-			auto averageTimePerSkeleton = 0.f;
+			auto averageTimePerSkeletonInMainLoop = 0.f;
 			if (activeSkeletons > 0) {
-				averageTimePerSkeleton = processing_time / activeSkeletons;
-				// calculate rolling average
-				rollingAverage += (averageTimePerSkeleton - rollingAverage) / m_sampleSize;
+				averageTimePerSkeletonInMainLoop = averageProcessingTimeInMainLoop / activeSkeletons;
 			}
-			_DMESSAGE("msecs/activeSkeleton %2.2g rollingAverage %2.2g activeSkeletons/maxActive/total %d/%d/%d processTime/targetTime %2.2g/%2.2g", averageTimePerSkeleton, rollingAverage, activeSkeletons, maxActiveSkeletons, m_skeletons.size(), processing_time, target_time);
+			_VMESSAGE("msecs/activeSkeleton %2.2g activeSkeletons/maxActive/total %d/%d/%d processTimeInMainLoop/targetTime %2.2g/%2.2g", averageTimePerSkeletonInMainLoop, activeSkeletons, maxActiveSkeletons, m_skeletons.size(), averageProcessingTimeInMainLoop, target_time);
 			if (m_autoAdjustMaxSkeletons) {
-				maxActiveSkeletons = processing_time > target_time ? activeSkeletons - 2 : static_cast<int>(target_time / rollingAverage);
+				maxActiveSkeletons += target_time > averageProcessingTimeInMainLoop ? 2 : -2;
 				// clamp the value to the m_maxActiveSkeletons value
 				maxActiveSkeletons = std::clamp(maxActiveSkeletons, 1, m_maxActiveSkeletons);
 				frameCount = 1;
 			}
+			else if (maxActiveSkeletons != m_maxActiveSkeletons)
+				maxActiveSkeletons = m_maxActiveSkeletons;
 		}
 	}
 
@@ -308,6 +366,8 @@ namespace hdt
 
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		if (m_shutdown) return;
+
+		fixArmorNameMaps();
 
 		auto& skeleton = getSkeletonData(e.skeleton);
 		skeleton.npc = getNpcNode(e.skeleton);
@@ -357,6 +417,8 @@ namespace hdt
 
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		if (m_shutdown) return;
+
+		fixArmorNameMaps();
 
 		auto& skeleton = getSkeletonData(e.skeleton);
 		skeleton.npc = npc;
@@ -616,13 +678,20 @@ namespace hdt
 #endif // _DEBUG
 
 		Armor& armor = armors.back();
+
+		// The name of the attachedNode provided here will have been changed by the Skyrim exe between this event and the next.
 		armor.armorWorn = attachedNode;
+		// That's why we set here the need to fix this armor in fixArmorNameMaps() (see its comment)
+		// to avoid this name change breaking processes like 'smp reset' when looking for the armor name in the armor nameMap.
+		armor.armorCurrentMeshName = attachedNode->m_name ? attachedNode->m_name : "";
+		armor.mustFixNameMap = true;
+		mustFixOneArmorMap = true;
 
 		if (!isFirstPersonSkeleton(skeleton))
 		{
 			std::unordered_map<IDStr, IDStr> renameMap = armor.renameMap;
 			// FIXME we probably could simplify this by using findNode as surely we don't attach Armors to lurkers skeleton?
-			auto system = SkyrimSystemCreator().createSystem(getNpcNode(skeleton), attachedNode, armor.physicsFile, std::move(renameMap));
+			auto system = SkyrimSystemCreator().createOrUpdateSystem(getNpcNode(skeleton), attachedNode, &armor.physicsFile, std::move(renameMap), nullptr);
 
 			if (system)
 			{
@@ -631,7 +700,7 @@ namespace hdt
 			}
 		}
 
-		if (skeleton && skeleton->m_owner)
+		if (instance()->m_disableSMPHairWhenWigEquipped && skeleton && skeleton->m_owner)
 		{
 			TESForm* form = LookupFormByID(skeleton->m_owner->formID);
 			Actor* actor = DYNAMIC_CAST(form, TESForm, Actor);
@@ -796,13 +865,26 @@ namespace hdt
 		//if (isPlayerCharacter())
 		//	return true;
 
+		// We always enable the skeletons that are just around the camera.
+		// It's useful if for example the skeleton origin is very near, behind the camera,
+		// but some parts or the skeleton are in front of the camera and need to be animated.
+		auto i = ActorManager::instance();
+		float minDistance = i->m_minCullingDistance;
+		if (m_distanceFromCamera2 < minDistance * minDistance)
+			return true;
+
 		// We don't enable the skeletons behind the camera or on its side.
 		if (m_cosAngleFromCameraDirectionTimesSkeletonDistance <= 0)
 			return false;
 
-		// We enable only the skeletons that the PC sees.
-		UINT8 unk1 = 0;
-		return HasLOS((*g_thePlayer), skeleton->m_owner, &unk1);
+		// We enable only the skeletons that can see the PC or the camera
+		const auto owner = DYNAMIC_CAST(this->skeletonOwner.get(), TESForm, Actor);
+		if (owner) {
+			NiPoint3 hitLocation;
+			const auto object = Actor_CalculateLOS(owner, &(i->m_cameraPositionDuringFrame), &hitLocation, 6.28);
+			return object ? false : true; // If object, we hit something on the path
+		}
+		return true; // should never happen, a skeleton without owner?
 	}
 
 	std::optional<NiPoint3> ActorManager::Skeleton::position() const
@@ -880,8 +962,7 @@ namespace hdt
 			if (!isFirstPersonSkeleton(skeleton))
 			{
 				std::unordered_map<IDStr, IDStr> renameMap = i.renameMap;
-
-				auto system = SkyrimSystemCreator().createSystem(npc, i.armorWorn, i.physicsFile, std::move(renameMap));
+				auto system = SkyrimSystemCreator().createOrUpdateSystem(npc, i.armorWorn, &i.physicsFile, std::move(renameMap), nullptr);
 
 				if (system)
 				{
@@ -913,7 +994,7 @@ namespace hdt
 
 		std::unordered_set<std::string> physicsDupes;
 
-		if (skeleton && skeleton->m_owner)
+		if (instance()->m_disableSMPHairWhenWigEquipped && skeleton && skeleton->m_owner)
 		{
 			TESForm* form = LookupFormByID(skeleton->m_owner->formID);
 			Actor* actor = DYNAMIC_CAST(form, TESForm, Actor);
@@ -950,8 +1031,7 @@ namespace hdt
 				headPart.physicsFile.first.c_str());
 #endif // _DEBUG
 			physicsDupes.insert(headPart.physicsFile.first);
-			auto system = SkyrimSystemCreator().createSystem(npc, this->head.headNode, headPart.physicsFile,
-				std::move(renameMap));
+			auto system = SkyrimSystemCreator().createOrUpdateSystem(npc, this->head.headNode, &headPart.physicsFile, std::move(renameMap), nullptr);
 
 			if (system)
 			{
