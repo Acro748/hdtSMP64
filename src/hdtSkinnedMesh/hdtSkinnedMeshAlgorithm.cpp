@@ -588,7 +588,6 @@ namespace hdt
 
 			float invWeight = 1.0f / c->weight;
 
-			auto maniford = dispatcher->getNewManifold(&rb0->m_rig, &rb1->m_rig);
 			auto worldA = c->pos[0] * invWeight;
 			auto worldB = c->pos[1] * invWeight;
 			auto localA = rb0->m_rig.getWorldTransform().invXform(worldA);
@@ -610,6 +609,8 @@ namespace hdt
 			newPt.m_combinedFriction = rb0->m_rig.getFriction() * rb1->m_rig.getFriction();
 			newPt.m_combinedRestitution = rb0->m_rig.getRestitution() * rb1->m_rig.getRestitution();
 			newPt.m_combinedRollingFriction = rb0->m_rig.getRollingFriction() * rb1->m_rig.getRollingFriction();
+
+			auto maniford = dispatcher->getNewManifold(&rb0->m_rig, &rb1->m_rig);
 			maniford->addManifoldPoint(newPt);
 		}
 	}
