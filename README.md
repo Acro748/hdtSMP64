@@ -178,7 +178,7 @@ The plugin recognizes the following optional parameters:
 
 ```
 #
-git clone -b test https://github.com/DaymareOn/hdtSMP64.git
+git clone -b master https://github.com/DaymareOn/hdtSMP64.git
 
 #
 cd hdtSMP64
