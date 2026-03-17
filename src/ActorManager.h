@@ -163,6 +163,7 @@ namespace hdt
 		private:
 			bool isActiveInScene() const;
 			bool checkPhysics();
+			static void doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map, RE::NiNode* dstRoot);
 
 			bool isActive = false;
 			float currentWindFactor = 0.f;

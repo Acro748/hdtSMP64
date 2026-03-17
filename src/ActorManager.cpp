@@ -604,6 +604,11 @@ namespace hdt
 
 	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map)
 	{
+		doSkeletonMerge(dst, src, prefix, map, dst);
+	}
+
+	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map, RE::NiNode* dstRoot)
+	{
 		const auto& children = src->GetChildren();
 
 		for (uint16_t i = 0; i < children.size(); ++i) {
@@ -624,9 +629,9 @@ namespace hdt
 			}
 
 			// TODO check it's not a lurker skeleton
-			auto dstChild = findNode(dst, srcChild->name);
+			auto dstChild = findNode(dstRoot, srcChild->name);
 			if (dstChild) {
-				doSkeletonMerge(dstChild, srcChild, prefix, map);
+				doSkeletonMerge(dstChild, srcChild, prefix, map, dstRoot);
 			} else {
 				dst->AttachChild(cloneNodeTree(srcChild, prefix, map), false);
 			}
