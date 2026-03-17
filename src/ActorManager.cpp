@@ -617,7 +617,7 @@ namespace hdt
 				continue;
 
 			if (!srcChild->name.size()) {
-				doSkeletonMerge(dst, srcChild, prefix, map);
+				doSkeletonMerge(dst, srcChild, prefix, map, dstRoot);
 				continue;
 			}
 
