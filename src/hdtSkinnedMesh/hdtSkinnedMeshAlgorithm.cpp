@@ -12,19 +12,14 @@ namespace hdt
 	{
 	}
 
-	// static const CollisionResult zero;
-
 	// Algorithm selection for collision checking.
 	// e_CPU is the original one, optimized for CPU performance.
 	// e_CPURefactored is an alternate CPU one, modified for conversion to GPU but still using CPU in practice.
+	// [3/15/2026] Realistically, e_CPURefactored (default) should always be better. e_CPU only does one level of AABB filtering
 	enum CollisionCheckAlgorithmType
 	{
 		e_CPU,
-		e_CPURefactored,
-	// Remove if useless
-#ifndef CUDA
-		e_CUDA
-#endif  // !CUDA
+		e_CPURefactored
 	};
 
 	// CollisionCheckBase1 provides data members and the basic constructor for the target types. Note that we
@@ -149,7 +144,6 @@ namespace hdt
 		}
 	};
 
-#if true
 	namespace
 	{
 		inline __m128 cross_product(__m128 const& vec0, __m128 const& vec1)
@@ -185,8 +179,6 @@ namespace hdt
 				penetration = 0;
 			}
 
-			// Compute unit normal. Keep the original normal because we'll need it later for the triangle
-			// check.
 			auto ab = (p1.pos() - p0.pos()).get128();
 			auto ac = (p2.pos() - p0.pos()).get128();
 			auto raw_normal = cross_product(ab, ac);
@@ -196,22 +188,20 @@ namespace hdt
 			}
 			auto normal = _mm_div_ps(raw_normal, len);
 			if (penetration < 0) {
-				normal = _mm_sub_ps(_mm_set1_ps(0.0), normal);
+				normal = _mm_sub_ps(_mm_setzero_ps(), normal);
 				penetration = -penetration;
 			}
 
-			// Compute distance from point to plane // ifndef CUDA: and projection onto plane
-#	ifdef CUDA
+#ifdef CUDA
 			auto ap = _mm_sub_ps(s.pos().get128(), p0.pos().get128());
 			auto distance = _mm_dp_ps(ap, normal, 0x77);
 			float distanceFromPlane = _mm_cvtss_f32(distance);
-#	else
+#else
 			auto ap = (s.pos() - p0.pos()).get128();
 			auto distance = _mm_dp_ps(ap, normal, 0x77);
 			float distanceFromPlane = _mm_cvtss_f32(distance);
 			auto projection = _mm_sub_ps(s.pos().get128(), _mm_mul_ps(normal, distance));
-#	endif
-			// Decide whether point is close enough to plane
+#endif
 			float radiusWithMargin = r + margin;
 			bool isInsideContactPlane;
 			if (penetration >= FLT_EPSILON)
@@ -219,7 +209,7 @@ namespace hdt
 			else {
 				if (distanceFromPlane < 0) {
 					distanceFromPlane = -distanceFromPlane;
-					normal = _mm_sub_ps(_mm_set1_ps(0.0), normal);
+					normal = _mm_sub_ps(_mm_setzero_ps(), normal);
 				}
 				isInsideContactPlane = distanceFromPlane < radiusWithMargin;
 			}
@@ -227,7 +217,7 @@ namespace hdt
 				return false;
 			}
 
-#	ifdef CUDA
+#ifdef CUDA
 			// Compute the triple product of the triangle normal with vectors from the sphere center to each
 			// pair of triangle vertices (note ordering of the vertices is important). The projection of the
 			// center onto the triangle plane lies within the triangle if and only if all three products are
@@ -242,8 +232,8 @@ namespace hdt
 			ac = _mm_dp_ps(ac, raw_normal, 0x71);
 			aa = _mm_or_ps(aa, ab);
 			aa = _mm_or_ps(aa, ac);
-			aa = _mm_cmpgt_ps(_mm_set1_ps(0.0), aa);
-#	else
+			aa = _mm_cmpgt_ps(_mm_setzero_ps(), aa);
+#else
 			// Compute (twice) area of each triangle between projection and two triangle points
 			ap = _mm_sub_ps(projection, p0.pos().get128());
 			auto bp = _mm_sub_ps(projection, p1.pos().get128());
@@ -260,59 +250,27 @@ namespace hdt
 			// Now if every pair of elements in aa sums to no more than area, then the point is inside the triangle
 			aa = _mm_add_ps(aa, _mm_shuffle_ps(aa, aa, _MM_SHUFFLE(3, 0, 2, 1)));
 			aa = _mm_cmpgt_ps(aa, len);
-#	endif
+#endif
 			auto pointInTriangle = _mm_test_all_zeros(_mm_set_epi32(0, -1, -1, -1), _mm_castps_si128(aa));
-			//auto pointInTriangle = _mm_testz_ps(_mm_set_ps(0, -1, -1, -1), aa);
 
 			res.colliderA = a;
 			res.colliderB = b;
 			if (pointInTriangle) {
 				res.normOnB.set128(normal);
 				res.posA = s.pos() - res.normOnB * r;
-#	ifdef CUDA
+#ifdef CUDA
 				res.posB = s.pos() - res.normOnB * (distanceFromPlane - margin);
-#	else
+#else
 				res.posB.set128(projection);
-#	endif
+#endif
 				res.depth = distanceFromPlane - radiusWithMargin;
 				return res.depth < -FLT_EPSILON;
 			}
 			return false;
 		}
 	};
-#else
-	template <bool SwapResults>
-	struct CollisionChecker<PerTriangleShape, SwapResults> : public CollisionCheckBase2<PerTriangleShape, SwapResults>
-	{
-		template <typename... Ts>
-		CollisionChecker(Ts&&... ts) :
-			CollisionCheckBase2(std::forward<Ts>(ts)...)
-		{}
 
-		bool checkCollide(Collider* a, Collider* b, CollisionResult& res)
-		{
-			auto s = v0[a->vertex];
-			auto r = s.marginMultiplier() * sp0->margin;
-			auto p0 = v1[b->vertices[0]];
-			auto p1 = v1[b->vertices[1]];
-			auto p2 = v1[b->vertices[2]];
-			auto margin = (p0.marginMultiplier() + p1.marginMultiplier() + p2.marginMultiplier()) / 3;
-			auto penetration = sp1->penetration * margin;
-			margin *= sp1->margin;
-
-			CheckTriangle tri(p0.pos(), p1.pos(), p2.pos(), margin, penetration);
-			if (!tri.valid)
-				return false;
-			auto ret = checkSphereTriangle(s.pos(), r, tri, res);
-			res.colliderA = a;
-			res.colliderB = b;
-			return ret;
-		}
-	};
-#endif
-
-	// CollisionCheckDispatcher provides a dispatch method to process two lists of colliders. It is needed for
-	// the new (GPU-oriented) algorithm, but we provide a CPU-only version as well.
+	// CollisionCheckDispatcher provides a dispatch method to process two lists of colliders.
 	template <typename T, bool SwapResults, CollisionCheckAlgorithmType Algorithm>
 	struct CollisionCheckDispatcher : public CollisionChecker<T, SwapResults>
 	{
@@ -351,16 +309,7 @@ namespace hdt
 		}
 	};
 
-	// [31/12/2021 DaydreamingDay] TODO See if the block can be removed with the enum.
-#ifndef CUDA
-	// Dispatcher specialization for sphere-triangle collisions on CUDA. Sphere-sphere collisions will
-	// continue to use the CPU dispatcher. Doesn't actually do anything yet (and will fail to compile).
-	template <bool SwapResults>
-	struct CollisionCheckDispatcher<PerTriangleShape, SwapResults, e_CUDA> : public CollisionCheckBase2<PerTriangleShape, SwapResults>
-	{};
-#endif
-
-	// Finally, CollisionCheckAlgorithm does the full check between collider trees.
+	// CollisionCheckAlgorithm does the full check between collider trees.
 	template <typename T, bool SwapResults = false, CollisionCheckAlgorithmType Algorithm = e_CPURefactored>
 	struct CollisionCheckAlgorithm : public CollisionCheckDispatcher<T, SwapResults, Algorithm>
 	{
@@ -450,7 +399,7 @@ namespace hdt
 	{
 		template <typename... Ts>
 		CollisionCheckAlgorithm(Ts&&... ts) :
-			CollisionChecker(std::forward<Ts>(ts)...)
+			CollisionChecker<T, SwapResults>(std::forward<Ts>(ts)...)
 		{}
 
 		int operator()()
@@ -571,9 +520,21 @@ namespace hdt
 			if (flexible < FLT_EPSILON)
 				continue;
 #else
+			// [3/13/2026]
+			// Note: This was using a break before, but logically that doesn't make sense?
+			// if we hit a stiffer collider earlier than our depth target, it'd early exit..
 			if (flexible < FLT_EPSILON)
-				return;
+				continue;
 #endif
+
+			float w = flexible * res.depth;
+			float w2 = w * w;
+
+			// pre-scale outside the bone loop, these don't depend on bone indices and the inner
+			// loop runs bonePerCollider^2 times, so this matters
+			auto normScaled = res.normOnB * w * w2;  // cubic weight: bakes depth into normal magnitude
+			auto posAScaled = res.posA * w2;
+			auto posBScaled = res.posB * w2;
 
 			for (int ib = 0; ib < a->getBonePerCollider(); ++ib) {
 				auto w0 = a->getColliderBoneWeight(res.colliderA, ib);
@@ -590,13 +551,11 @@ namespace hdt
 					if (a->m_owner->m_skinnedBones[boneIdx0].isKinematic && b->m_owner->m_skinnedBones[boneIdx1].isKinematic)
 						continue;
 
-					float w = flexible * res.depth;
-					float w2 = w * w;
-					auto c = get(boneIdx0, boneIdx1);
+					auto c = getAndTrack(boneIdx0, boneIdx1);
 					c->weight += w2;
-					c->normal += res.normOnB * w * w2;
-					c->pos[0] += res.posA * w2;
-					c->pos[1] += res.posB * w2;
+					c->normal += normScaled;
+					c->pos[0] += posAScaled;
+					c->pos[1] += posBScaled;
 				}
 			}
 		}
@@ -605,48 +564,54 @@ namespace hdt
 	void SkinnedMeshAlgorithm::MergeBuffer::apply(SkinnedMeshBody* body0, SkinnedMeshBody* body1,
 		CollisionDispatcher* dispatcher)
 	{
-		for (int i = 0; i < body0->m_skinnedBones.size(); ++i) {
+		// only visit cells that were actually written to this frame,
+		// instead of looping all bones0 * bones1 (far fewer iterations)
+		for (int flatIdx : activeCells) {
+			int i = flatIdx / mergeStride;
+			int j = flatIdx % mergeStride;
+
+			auto* c = &buffer[flatIdx];
+			if (c->weight < FLT_EPSILON)
+				continue;
+
 			if (!body1->canCollideWith(body0->m_skinnedBones[i].ptr))
 				continue;
-			for (int j = 0; j < body1->m_skinnedBones.size(); ++j) {
-				if (!body0->canCollideWith(body1->m_skinnedBones[j].ptr))
-					continue;
-				if (get(i, j)->weight < FLT_EPSILON)
-					continue;
+			if (!body0->canCollideWith(body1->m_skinnedBones[j].ptr))
+				continue;
+			if (body0->m_skinnedBones[i].isKinematic && body1->m_skinnedBones[j].isKinematic)
+				continue;
 
-				if (body0->m_skinnedBones[i].isKinematic && body1->m_skinnedBones[j].isKinematic)
-					continue;
+			auto rb0 = body0->m_skinnedBones[i].ptr;
+			auto rb1 = body1->m_skinnedBones[j].ptr;
+			if (rb0 == rb1)
+				continue;
 
-				auto rb0 = body0->m_skinnedBones[i].ptr;
-				auto rb1 = body1->m_skinnedBones[j].ptr;
-				if (rb0 == rb1)
-					continue;
+			float invWeight = 1.0f / c->weight;
 
-				auto c = get(i, j);
-				float invWeight = 1.0f / c->weight;
+			auto worldA = c->pos[0] * invWeight;
+			auto worldB = c->pos[1] * invWeight;
+			auto localA = rb0->m_rig.getWorldTransform().invXform(worldA);
+			auto localB = rb1->m_rig.getWorldTransform().invXform(worldB);
+			auto normal = c->normal * invWeight;
+			if (normal.fuzzyZero())
+				continue;
 
-				auto maniford = dispatcher->getNewManifold(&rb0->m_rig, &rb1->m_rig);
-				auto worldA = c->pos[0] * invWeight;
-				auto worldB = c->pos[1] * invWeight;
-				auto localA = rb0->m_rig.getWorldTransform().invXform(worldA);
-				auto localB = rb1->m_rig.getWorldTransform().invXform(worldB);
-				auto normal = c->normal * invWeight;
-				if (normal.fuzzyZero())
-					continue;
-				auto depth = -normal.length();
-				normal = -normal.normalized();
+			// depth was baked into normal magnitude during doMerge (weighted cubically instead of storing a separate depth field)
+			auto depth = -normal.length();
+			normal = -normal.normalized();
 
-				if (depth >= -FLT_EPSILON)
-					continue;
+			if (depth >= -FLT_EPSILON)
+				continue;
 
-				btManifoldPoint newPt(localA, localB, normal, depth);
-				newPt.m_positionWorldOnA = worldA;
-				newPt.m_positionWorldOnB = worldB;
-				newPt.m_combinedFriction = rb0->m_rig.getFriction() * rb1->m_rig.getFriction();
-				newPt.m_combinedRestitution = rb0->m_rig.getRestitution() * rb1->m_rig.getRestitution();
-				newPt.m_combinedRollingFriction = rb0->m_rig.getRollingFriction() * rb1->m_rig.getRollingFriction();
-				maniford->addManifoldPoint(newPt);
-			}
+			btManifoldPoint newPt(localA, localB, normal, depth);
+			newPt.m_positionWorldOnA = worldA;
+			newPt.m_positionWorldOnB = worldB;
+			newPt.m_combinedFriction = rb0->m_rig.getFriction() * rb1->m_rig.getFriction();
+			newPt.m_combinedRestitution = rb0->m_rig.getRestitution() * rb1->m_rig.getRestitution();
+			newPt.m_combinedRollingFriction = rb0->m_rig.getRollingFriction() * rb1->m_rig.getRollingFriction();
+
+			auto maniford = dispatcher->getNewManifold(&rb0->m_rig, &rb1->m_rig);
+			maniford->addManifoldPoint(newPt);
 		}
 	}
 
@@ -654,8 +619,14 @@ namespace hdt
 	void SkinnedMeshAlgorithm::processCollision(T0* shape0, T1* shape1, MergeBuffer& merge, CollisionResult* collision)
 	{
 		int count = std::min(checkCollide(shape0, shape1, collision), MaxCollisionCount);
-		if (count > 0)
+		if (count > 0) {
+			// results come back in random order from parallel workers, sort so doMerge's
+			// early break actually bails on shallow contacts instead of random ones
+			std::sort(collision, collision + count, [](const CollisionResult& a, const CollisionResult& b) {
+				return a.depth < b.depth;
+			});
 			merge.doMerge(shape0, shape1, collision, count);
+		}
 	}
 
 #ifdef CUDA
@@ -736,27 +707,30 @@ namespace hdt
 	void SkinnedMeshAlgorithm::processCollision(SkinnedMeshBody* body0, SkinnedMeshBody* body1,
 		CollisionDispatcher* dispatcher)
 	{
-		MergeBuffer merge;
-		merge.alloc(static_cast<int>(body0->m_skinnedBones.size()), static_cast<int>(body1->m_skinnedBones.size()));
+		// thread_local so we don't heap-alloc these 200+ times per frame
+		// MergeBuffer::resize() is O(1) after first call (generation counter, no zeroing)
+		thread_local MergeBuffer merge;
+		thread_local auto collision = std::make_unique<CollisionResult[]>(MaxCollisionCount);
 
-		auto collision = new CollisionResult[MaxCollisionCount];
+		merge.resize(static_cast<int>(body0->m_skinnedBones.size()), static_cast<int>(body1->m_skinnedBones.size()));
+
 		if (body0->m_shape->asPerTriangleShape() && body1->m_shape->asPerTriangleShape()) {
+			// Todo: This can actually be further optimized, but would need a re-factor.. However, would the performance increase be worth
+			// the extra boilerplate code..?
 			processCollision(body0->m_shape->asPerTriangleShape(), body1->m_shape->asPerVertexShape(), merge,
-				collision);
+				collision.get());
 			processCollision(body0->m_shape->asPerVertexShape(), body1->m_shape->asPerTriangleShape(), merge,
-				collision);
+				collision.get());
 		} else if (body0->m_shape->asPerTriangleShape())
 			processCollision(body0->m_shape->asPerTriangleShape(), body1->m_shape->asPerVertexShape(), merge,
-				collision);
+				collision.get());
 		else if (body1->m_shape->asPerTriangleShape())
 			processCollision(body0->m_shape->asPerVertexShape(), body1->m_shape->asPerTriangleShape(), merge,
-				collision);
+				collision.get());
 		else
-			processCollision(body0->m_shape->asPerVertexShape(), body1->m_shape->asPerVertexShape(), merge, collision);
+			processCollision(body0->m_shape->asPerVertexShape(), body1->m_shape->asPerVertexShape(), merge, collision.get());
 
-		delete[] collision;
 		merge.apply(body0, body1, dispatcher);
-		merge.release();
 	}
 
 	void SkinnedMeshAlgorithm::registerAlgorithm(btCollisionDispatcherMt* dispatcher)
