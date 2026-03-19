@@ -1,7 +1,5 @@
 #pragma once
 
-#include "FrameworkUtils.h"
-
 namespace hdt
 {
 	class ForceUpdateList

@@ -12,9 +12,6 @@
 #endif
 #pragma warning(pop)
 
-#include "FrameworkUtils.h"
-#include "IString.h"
-
 //
 #include <algorithm>
 #include <amp.h>
@@ -98,24 +95,6 @@ namespace hdt
 
 namespace std
 {
-	template <>
-	struct hash<hdt::IDStr>
-	{
-		size_t operator()(const hdt::IDStr& id) const noexcept
-		{
-			return std::hash<std::string>()(id->cstr());
-		}
-	};
-
-	template <>
-	struct hash<hdt::IString>
-	{
-		size_t operator()(const hdt::IString& id) const noexcept
-		{
-			return std::hash<std::string>()(id.cstr());
-		}
-	};
-
 	// TODO: should this be contributed to CommonLibSSE-NG?
 	template <class CharT>
 	struct hash<RE::detail::BSFixedString<CharT>>
