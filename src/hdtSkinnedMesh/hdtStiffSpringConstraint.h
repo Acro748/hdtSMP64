@@ -10,12 +10,8 @@ namespace hdt
 		public btTypedConstraint
 	{
 	public:
-		using btTypedConstraint::operator new;
-		using btTypedConstraint::operator delete;
-		using btTypedConstraint::operator new[];
-		using btTypedConstraint::operator delete[];
+		BT_DECLARE_ALIGNED_ALLOCATOR();
 
-	public:
 		StiffSpringConstraint(SkinnedMeshBone* a, SkinnedMeshBone* b);
 		virtual ~StiffSpringConstraint() override = default;
 
