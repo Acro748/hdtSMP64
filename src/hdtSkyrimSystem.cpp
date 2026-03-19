@@ -583,12 +583,12 @@ namespace hdt
 			return;
 		}
 
-		IDStr cls = m_reader->getAttribute("template", "");
+		RE::BSFixedString cls = m_reader->getAttribute("template", "");
 		if (!createBoneFromNodeName(name, cls, true, old_system))
 			m_reader->skipCurrentElement();
 	}
 
-	SkyrimBone* SkyrimSystemCreator::createBoneFromNodeName(const RE::BSFixedString& bodyName, const IDStr& templateName, const bool readTemplate, SkyrimSystem* old_system)
+	SkyrimBone* SkyrimSystemCreator::createBoneFromNodeName(const RE::BSFixedString& bodyName, const RE::BSFixedString& templateName, const bool readTemplate, SkyrimSystem* old_system)
 	{
 		auto node = findObjectByName(bodyName);
 		if (node) {
@@ -1274,35 +1274,35 @@ namespace hdt
 		}
 	}
 
-	const SkyrimSystemCreator::BoneTemplate& SkyrimSystemCreator::getBoneTemplate(const IDStr& name)
+	const SkyrimSystemCreator::BoneTemplate& SkyrimSystemCreator::getBoneTemplate(const RE::BSFixedString& name)
 	{
 		auto iter = m_boneTemplates.find(name);
 		if (iter == m_boneTemplates.end())
-			return m_boneTemplates[""];
+			return m_boneTemplates[RE::BSFixedString()];
 		return iter->second;
 	}
 
-	const SkyrimSystemCreator::GenericConstraintTemplate& SkyrimSystemCreator::getGenericConstraintTemplate(const IDStr& name)
+	const SkyrimSystemCreator::GenericConstraintTemplate& SkyrimSystemCreator::getGenericConstraintTemplate(const RE::BSFixedString& name)
 	{
 		auto iter = m_genericConstraintTemplates.find(name);
 		if (iter == m_genericConstraintTemplates.end())
-			return m_genericConstraintTemplates[""];
+			return m_genericConstraintTemplates[RE::BSFixedString()];
 		return iter->second;
 	}
 
-	const SkyrimSystemCreator::StiffSpringConstraintTemplate& SkyrimSystemCreator::getStiffSpringConstraintTemplate(const IDStr& name)
+	const SkyrimSystemCreator::StiffSpringConstraintTemplate& SkyrimSystemCreator::getStiffSpringConstraintTemplate(const RE::BSFixedString& name)
 	{
 		auto iter = m_stiffSpringConstraintTemplates.find(name);
 		if (iter == m_stiffSpringConstraintTemplates.end())
-			return m_stiffSpringConstraintTemplates[""];
+			return m_stiffSpringConstraintTemplates[RE::BSFixedString()];
 		return iter->second;
 	}
 
-	const SkyrimSystemCreator::ConeTwistConstraintTemplate& SkyrimSystemCreator::getConeTwistConstraintTemplate(const IDStr& name)
+	const SkyrimSystemCreator::ConeTwistConstraintTemplate& SkyrimSystemCreator::getConeTwistConstraintTemplate(const RE::BSFixedString& name)
 	{
 		auto iter = m_coneTwistConstraintTemplates.find(name);
 		if (iter == m_coneTwistConstraintTemplates.end())
-			return m_coneTwistConstraintTemplates[""];
+			return m_coneTwistConstraintTemplates[RE::BSFixedString()];
 		return iter->second;
 	}
 

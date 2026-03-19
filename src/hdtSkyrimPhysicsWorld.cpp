@@ -222,13 +222,13 @@ namespace hdt
 	{
 		struct Group
 		{
-			std::unordered_set<IDStr> tags;
-			std::unordered_map<IDStr, std::vector<SkyrimBody*>> list;
+			std::unordered_set<RE::BSFixedString> tags;
+			std::unordered_map<RE::BSFixedString, std::vector<SkyrimBody*>> list;
 		};
 
 		std::unordered_map<RE::NiNode*, Group> maps;
 
-		IDStr invalidString;
+		RE::BSFixedString invalidString;
 		for (auto& i : m_systems) {
 			auto system = static_cast<SkyrimSystem*>(i.get());
 			auto& map = maps[system->m_skeleton.get()];

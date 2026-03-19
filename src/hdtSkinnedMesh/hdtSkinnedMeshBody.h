@@ -102,9 +102,9 @@ namespace hdt
 		std::vector<VertexPos> m_vpos;
 #endif
 
-		std::vector<IDStr> m_tags;
-		std::unordered_set<IDStr> m_canCollideWithTags;
-		std::unordered_set<IDStr> m_noCollideWithTags;
+		std::vector<RE::BSFixedString> m_tags;
+		std::unordered_set<RE::BSFixedString> m_canCollideWithTags;
+		std::unordered_set<RE::BSFixedString> m_noCollideWithTags;
 		std::vector<SkinnedMeshBone*> m_canCollideWithBones;
 		std::vector<SkinnedMeshBone*> m_noCollideWithBones;
 

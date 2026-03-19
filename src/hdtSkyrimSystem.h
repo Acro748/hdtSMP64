@@ -65,8 +65,8 @@ namespace hdt
 			}
 
 			std::shared_ptr<btCollisionShape> m_shape;
-			std::vector<IDStr> m_canCollideWithBone;
-			std::vector<IDStr> m_noCollideWithBone;
+			std::vector<RE::BSFixedString> m_canCollideWithBone;
+			std::vector<RE::BSFixedString> m_noCollideWithBone;
 			btTransform m_centerOfMassTransform;
 			float m_marginMultipler;
 			float m_gravityFactor = 1.0f;
@@ -160,11 +160,11 @@ namespace hdt
 
 		std::string m_filePath;
 
-		std::unordered_map<IDStr, BoneTemplate> m_boneTemplates;
-		std::unordered_map<IDStr, GenericConstraintTemplate> m_genericConstraintTemplates;
-		std::unordered_map<IDStr, StiffSpringConstraintTemplate> m_stiffSpringConstraintTemplates;
-		std::unordered_map<IDStr, ConeTwistConstraintTemplate> m_coneTwistConstraintTemplates;
-		std::unordered_map<IDStr, std::shared_ptr<btCollisionShape>> m_shapes;
+		std::unordered_map<RE::BSFixedString, BoneTemplate> m_boneTemplates;
+		std::unordered_map<RE::BSFixedString, GenericConstraintTemplate> m_genericConstraintTemplates;
+		std::unordered_map<RE::BSFixedString, StiffSpringConstraintTemplate> m_stiffSpringConstraintTemplates;
+		std::unordered_map<RE::BSFixedString, ConeTwistConstraintTemplate> m_coneTwistConstraintTemplates;
+		std::unordered_map<RE::BSFixedString, std::shared_ptr<btCollisionShape>> m_shapes;
 		std::vector<std::shared_ptr<btCollisionShape>> m_shapeRefs;
 
 		std::pair<RE::BSTSmartPointer<SkyrimBody>, VertexOffsetMap> generateMeshBody(const std::string name, DefaultBBP::NameSet_t* names);
@@ -178,12 +178,12 @@ namespace hdt
 		void readStiffSpringConstraintTemplate(StiffSpringConstraintTemplate& dest);
 		void readConeTwistConstraintTemplate(ConeTwistConstraintTemplate& dest);
 
-		const BoneTemplate& getBoneTemplate(const IDStr& name);
-		const GenericConstraintTemplate& getGenericConstraintTemplate(const IDStr& name);
-		const StiffSpringConstraintTemplate& getStiffSpringConstraintTemplate(const IDStr& name);
-		const ConeTwistConstraintTemplate& getConeTwistConstraintTemplate(const IDStr& name);
+		const BoneTemplate& getBoneTemplate(const RE::BSFixedString& name);
+		const GenericConstraintTemplate& getGenericConstraintTemplate(const RE::BSFixedString& name);
+		const StiffSpringConstraintTemplate& getStiffSpringConstraintTemplate(const RE::BSFixedString& name);
+		const ConeTwistConstraintTemplate& getConeTwistConstraintTemplate(const RE::BSFixedString& name);
 
-		SkyrimBone* createBoneFromNodeName(const RE::BSFixedString& bodyName, const IDStr& templateName = "", const bool readTemplate = false, SkyrimSystem* old_system = nullptr);
+		SkyrimBone* createBoneFromNodeName(const RE::BSFixedString& bodyName, const RE::BSFixedString& templateName = "", const bool readTemplate = false, SkyrimSystem* old_system = nullptr);
 		void readOrUpdateBone(SkyrimSystem* old_system = nullptr);
 		RE::BSTSmartPointer<SkyrimBody> readPerVertexShape(DefaultBBP::NameMap_t meshNameMap);
 		RE::BSTSmartPointer<SkyrimBody> readPerTriangleShape(DefaultBBP::NameMap_t* meshNameMap);
