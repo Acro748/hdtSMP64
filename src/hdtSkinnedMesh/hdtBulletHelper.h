@@ -3,21 +3,10 @@
 #include <btBulletCollisionCommon.h>
 #include <btBulletDynamicsCommon.h>
 
+#include <bit>
 #include <cassert>
+#include <cfloat>
 #include <intrin.h>
-
-#define FLT_DIG 6                    /* # of decimal digits of precision */
-#define FLT_EPSILON 1.192092896e-07F /* smallest such that 1.0+FLT_EPSILON != 1.0 */
-#define FLT_GUARD 0
-#define FLT_MANT_DIG 24          /* # of bits in mantissa */
-#define FLT_MAX 3.402823466e+38F /* max value */
-#define FLT_MAX_10_EXP 38        /* max decimal exponent */
-#define FLT_MAX_EXP 128          /* max binary exponent */
-#define FLT_MIN 1.175494351e-38F /* min positive value */
-#define FLT_MIN_10_EXP (-37)     /* min decimal exponent */
-#define FLT_MIN_EXP (-125)       /* min binary exponent */
-#define FLT_NORMALIZE 0
-#define FLT_RADIX 2 /* exponent radix */
 
 #undef min
 #undef max
@@ -101,17 +90,15 @@ namespace hdt
 
 	inline float rsqrt(float number)
 	{
-		const float threehalfs = 1.5F;
-		const float x2 = number * 0.5F;
+		__m128 n = _mm_set_ss(number);
+		__m128 est = _mm_rsqrt_ss(n);
 
-		float res = number;
-		U32& i = *reinterpret_cast<U32*>(&res);       // evil floating point bit level hacking
-		i = 0x5f375a86 - (i >> 1);                    // what the fuck?
-		res = res * (threehalfs - (x2 * res * res));  // 1st iteration
-		res = res * (threehalfs - (x2 * res * res));  // 2nd iteration, this can be removed
-		res = res * (threehalfs - (x2 * res * res));
-		res = res * (threehalfs - (x2 * res * res));
-		return res;
+		__m128 muls = _mm_mul_ss(_mm_mul_ss(n, est), est);
+
+		__m128 half_est = _mm_mul_ss(est, _mm_set_ss(0.5f));
+		__m128 three_minus_muls = _mm_sub_ss(_mm_set_ss(3.0f), muls);
+
+		return _mm_cvtss_f32(_mm_mul_ss(half_est, three_minus_muls));
 	}
 
 	template <class T>
@@ -126,6 +113,7 @@ namespace hdt
 		return _mm_cvtss_f32(_mm_andnot_ps(_mm_set_ss(-0.f), _mm_set_ss(rhs)));
 	}
 
+	// Todo: Do we even need the amp library?
 	template <class T>
 	T min(const T& a, const T& b) restrict(cpu, amp)
 	{
@@ -148,10 +136,7 @@ namespace hdt
 
 	inline U32 aligned2Pow(U32 lim)
 	{
-		unsigned long size;
-		_BitScanReverse(&size, lim);
-		size = 1 << size;
-		return size;
+		return std::bit_floor(lim);
 	}
 
 	ATTRIBUTE_ALIGNED16(class)
@@ -267,7 +252,7 @@ namespace hdt
 
 		btMatrix4x3(const btQsTransform& t)
 		{
-			((btMatrix3x3*)this)->setRotation(t.getBasis());
+			reinterpret_cast<btMatrix3x3*>(this)->setRotation(t.getBasis());
 			__m128 scale = pshufd<0xFF>(t.getOrigin().get128());
 			m_row[0] = _mm_mul_ps(m_row[0], scale);
 			m_row[1] = _mm_mul_ps(m_row[1], scale);
@@ -276,13 +261,6 @@ namespace hdt
 			m_row[1].m128_f32[3] = t.getOrigin()[1];
 			m_row[2].m128_f32[3] = t.getOrigin()[2];
 		}
-
-		/*btMatrix4x3(const btMatrix4x3& rhs)
-		{
-		_mm_store_ps(m_row[0].m128_f32, rhs.m_row[0]);
-		_mm_store_ps(m_row[1].m128_f32, rhs.m_row[1]);
-		_mm_store_ps(m_row[2].m128_f32, rhs.m_row[2]);
-		}*/
 
 		btVector3 operator*(const btVector3& rhs) const
 		{
@@ -334,14 +312,6 @@ namespace hdt
 			return xmm0;
 		}
 
-		/*inline btMatrix4x3& operator =(const btMatrix4x3& rhs)
-		{
-		_mm_store_ps(m_row[0].m128_f32, rhs.m_row[0]);
-		_mm_store_ps(m_row[1].m128_f32, rhs.m_row[1]);
-		_mm_store_ps(m_row[2].m128_f32, rhs.m_row[2]);
-		return *this;
-		}*/
-
 		__m128 m_row[3];
 	};
 
@@ -380,15 +350,8 @@ namespace hdt
 			return ret;
 		}
 
-		btMatrix3x3 basis() const { return ((btMatrix3x3*)this)->transpose(); }
-		btTransform toTransform() const { return btTransform(((btMatrix3x3*)this)->transpose(), m_col[3]); }
-		/*inline btMatrix4x3& operator =(const btMatrix4x3& rhs)
-		{
-		_mm_store_ps(m_row[0].m128_f32, rhs.m_row[0]);
-		_mm_store_ps(m_row[1].m128_f32, rhs.m_row[1]);
-		_mm_store_ps(m_row[2].m128_f32, rhs.m_row[2]);
-		return *this;
-		}*/
+		btMatrix3x3 basis() const { return reinterpret_cast<const btMatrix3x3*>(this)->transpose(); }
+		btTransform toTransform() const { return btTransform(reinterpret_cast<const btMatrix3x3*>(this)->transpose(), m_col[3]); }
 
 		btVector3 m_col[4];
 	};
@@ -434,22 +397,4 @@ namespace hdt
 	template <class T>
 	using vectorA16 = std::vector<T>;
 
-	struct SpinLock
-	{
-	public:
-		void lock()
-		{
-			long count = 0;
-			while (m_flag.test_and_set(std::memory_order_acquire)) {
-				if (++count > 10000) {
-					SwitchToThread();
-				}
-			}
-		}
-
-		void unlock() { m_flag.clear(std::memory_order_release); }
-
-	protected:
-		std::atomic_flag m_flag = ATOMIC_FLAG_INIT;
-	};
 }
