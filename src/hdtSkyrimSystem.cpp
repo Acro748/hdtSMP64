@@ -175,7 +175,7 @@ namespace hdt
 		return createBoneFromNodeName(name);
 	}
 
-	const RE::BSFixedString& SkyrimSystemCreator::getRenamedBone(const RE::BSFixedString& name)
+	RE::BSFixedString SkyrimSystemCreator::getRenamedBone(const RE::BSFixedString& name)
 	{
 		auto iter = m_renameMap.find(name);
 		if (iter != m_renameMap.end())

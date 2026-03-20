@@ -147,7 +147,7 @@ namespace hdt
 
 		using VertexOffsetMap = std::unordered_map<std::string, int>;
 
-		const RE::BSFixedString& getRenamedBone(const RE::BSFixedString& name);
+		RE::BSFixedString getRenamedBone(const RE::BSFixedString& name);
 
 		RE::BSTSmartPointer<SkyrimSystem> m_mesh;
 		RE::NiNode* m_skeleton;
