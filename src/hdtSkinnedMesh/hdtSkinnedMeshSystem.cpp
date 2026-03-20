@@ -50,14 +50,6 @@ namespace hdt
 			i->updateBoundingSphereAabb();
 	}
 
-	//void SkinnedMeshSystem::internalUpdateCL()
-	//{
-	//	for (auto& i : m_bones)
-	//		i->internalUpdate();
-
-	//	//i->internalUpdate();
-	//}
-
 	void SkinnedMeshSystem::gather(std::vector<SkinnedMeshBody*>& bodies, std::vector<SkinnedMeshShape*>& shapes)
 	{
 		for (auto& i : m_meshes) {

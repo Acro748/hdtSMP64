@@ -25,7 +25,7 @@ namespace hdt
 		virtual void writeTransform();
 
 		void internalUpdate();
-		//void internalUpdateCL();
+
 		void gather(std::vector<SkinnedMeshBody*>& bodies, std::vector<SkinnedMeshShape*>& shapes);
 
 		bool valid() const { return !m_bones.empty(); }
