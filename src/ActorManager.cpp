@@ -230,10 +230,10 @@ namespace hdt
 
 				for (auto& entry : skeleton.head.renameMap) {
 					// This case never happens to a lurker skeleton, thus we don't need to test.
-					auto node = findNode(headPartIter->origPartRootNode.get(), entry.second->cstr());
+					auto node = findNode(headPartIter->origPartRootNode.get(), entry.second);
 					if (node) {
-						logger::debug("Rename node {} -> {}.", entry.second->cstr(), entry.first->cstr());
-						setNiNodeName(node, entry.first->cstr());
+						logger::debug("Rename node {} -> {}.", entry.second.c_str(), entry.first.c_str());
+						node->name = entry.first;
 					}
 				}
 			}
@@ -282,18 +282,14 @@ namespace hdt
 		return RE::BSEventNotifyControl::kContinue;
 	}
 
-	IDStr ActorManager::armorPrefix(ActorManager::IDType id)
+	std::string ActorManager::armorPrefix(ActorManager::IDType id)
 	{
-		char buffer[128];
-		sprintf_s(buffer, "hdtSSEPhysics_AutoRename_Armor_%08X ", id);
-		return IDStr(buffer);
+		return fmt::format("hdtSSEPhysics_AutoRename_Armor_{:08X} ", id);
 	}
 
-	IDStr ActorManager::headPrefix(ActorManager::IDType id)
+	std::string ActorManager::headPrefix(ActorManager::IDType id)
 	{
-		char buffer[128];
-		sprintf_s(buffer, "hdtSSEPhysics_AutoRename_Head_%08X ", id);
-		return IDStr(buffer);
+		return fmt::format("hdtSSEPhysics_AutoRename_Head_{:08X} ", id);
 	}
 
 	void ActorManager::fixArmorNameMaps()
@@ -602,12 +598,12 @@ namespace hdt
 		return 0;
 	}
 
-	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map)
+	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, std::string_view prefix, std::unordered_map<RE::BSFixedString, RE::BSFixedString>& map)
 	{
 		doSkeletonMerge(dst, src, prefix, map, dst);
 	}
 
-	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map, RE::NiNode* dstRoot)
+	void ActorManager::Skeleton::doSkeletonMerge(RE::NiNode* dst, RE::NiNode* src, std::string_view prefix, std::unordered_map<RE::BSFixedString, RE::BSFixedString>& map, RE::NiNode* dstRoot)
 	{
 		const auto& children = src->GetChildren();
 
@@ -638,7 +634,7 @@ namespace hdt
 		}
 	}
 
-	RE::NiNode* ActorManager::Skeleton::cloneNodeTree(RE::NiNode* src, IString* prefix, std::unordered_map<IDStr, IDStr>& map)
+	RE::NiNode* ActorManager::Skeleton::cloneNodeTree(RE::NiNode* src, std::string_view prefix, std::unordered_map<RE::BSFixedString, RE::BSFixedString>& map)
 	{
 		//
 		RE::NiCloningProcess c;
@@ -658,12 +654,12 @@ namespace hdt
 		return ret;
 	}
 
-	void ActorManager::Skeleton::renameTree(RE::NiNode* root, IString* prefix, std::unordered_map<IDStr, IDStr>& map)
+	void ActorManager::Skeleton::renameTree(RE::NiNode* root, std::string_view prefix, std::unordered_map<RE::BSFixedString, RE::BSFixedString>& map)
 	{
 		if (root->name.size()) {
-			std::string newName(prefix->cstr(), prefix->size());
+			std::string newName{ prefix };
 			newName += root->name;
-			if (map.insert(std::make_pair<IDStr, IDStr>(root->name.c_str(), newName)).second) {
+			if (map.insert(std::make_pair<RE::BSFixedString, RE::BSFixedString>(root->name.c_str(), newName)).second) {
 				logger::debug("Rename Bone {} -> {}.", root->name, newName.c_str());
 			}
 
@@ -679,7 +675,7 @@ namespace hdt
 		}
 	}
 
-	void ActorManager::Skeleton::doSkeletonClean(RE::NiNode* dst, IString* prefix)
+	void ActorManager::Skeleton::doSkeletonClean(RE::NiNode* dst, std::string_view prefix)
 	{
 		auto& children = dst->GetChildren();
 
@@ -688,7 +684,7 @@ namespace hdt
 			if (!child)
 				continue;
 
-			if (child->name.size() && !strncmp(child->name.data(), prefix->cstr(), prefix->size())) {
+			if (prefix == std::string_view(child->name).substr(0, prefix.size())) {
 				dst->DetachChildAt2(i);
 			} else {
 				doSkeletonClean(child, prefix);
@@ -807,13 +803,13 @@ namespace hdt
 
 			i.clearPhysics();
 			if (npc) {
-				doSkeletonClean(npc.get(), i.prefix.get());
+				doSkeletonClean(npc.get(), i.prefix);
 			}
 
-			i.prefix = nullptr;
+			i.prefix = std::string();
 		}
 
-		armors.erase(std::remove_if(armors.begin(), armors.end(), [](Armor& i) { return !i.prefix; }), armors.end());
+		armors.erase(std::remove_if(armors.begin(), armors.end(), [](Armor& i) { return i.prefix.empty(); }), armors.end());
 	}
 
 	void ActorManager::Skeleton::cleanHead(bool cleanAll)
@@ -837,7 +833,7 @@ namespace hdt
 							logger::debug("Decrementing use count by 1, it is now {}.", findNode->second);
 							if (findNode->second <= 0) {
 								logger::debug("Node no longer in use, cleaning from skeleton.");
-								auto removeObj = findObject(npc.get(), renameIt->second->cstr());
+								auto removeObj = findObject(npc.get(), renameIt->second);
 								if (removeObj) {
 									logger::debug("Found node {}, removing.", removeObj->name);
 									auto parent = removeObj->parent;
@@ -1104,9 +1100,9 @@ namespace hdt
 			this->head.headParts.clear();
 
 			if (npc)
-				doSkeletonClean(npc.get(), this->head.prefix.get());
+				doSkeletonClean(npc.get(), this->head.prefix);
 
-			this->head.prefix = nullptr;
+			this->head.prefix = std::string();
 			this->head.headNode = nullptr;
 			this->head.renameMap.clear();
 			this->head.nodeUseCount.clear();
@@ -1298,7 +1294,7 @@ namespace hdt
 					boneName = fmd->bones[boneIdx];
 			}
 
-			if (!*boneName.c_str()) {
+			if (boneName.empty()) {
 				if (origGeom) {
 					const auto& rd = origGeom->GetGeometryRuntimeData();
 					if (rd.skinInstance && rd.skinInstance->skinData && boneIdx < rd.skinInstance->skinData->bones) {
@@ -1322,8 +1318,8 @@ namespace hdt
 
 			auto renameIt = this->head.renameMap.find(boneName.c_str());
 			if (renameIt != this->head.renameMap.end()) {
-				logger::debug("Found renamed bone {} -> {}.", boneName, renameIt->second->cstr());
-				boneName = renameIt->second->cstr();
+				logger::debug("Found renamed bone {} -> {}.", boneName, renameIt->second.c_str());
+				boneName = renameIt->second;
 				hasRenames = true;
 			}
 
@@ -1332,7 +1328,7 @@ namespace hdt
 			if (!boneNode && !hasMerged) {
 				logger::debug("Bone not found on skeleton, trying skeleton merge.");
 				if (this->head.headParts.back().origPartRootNode) {
-					doSkeletonMerge(npc.get(), head.headParts.back().origPartRootNode.get(), head.prefix.get(), head.renameMap);
+					doSkeletonMerge(npc.get(), head.headParts.back().origPartRootNode.get(), head.prefix, head.renameMap);
 				} else if (this->head.npcFaceGeomNode) {
 					// Facegen data doesn't have any tree structure to the skeleton. We need to make any new
 					// nodes children of the head node, so that they move properly when there's no physics.
@@ -1354,7 +1350,7 @@ namespace hdt
 							}
 						}
 					}
-					doSkeletonMerge(npc.get(), this->head.npcFaceGeomNode.get(), head.prefix.get(), head.renameMap);
+					doSkeletonMerge(npc.get(), this->head.npcFaceGeomNode.get(), head.prefix, head.renameMap);
 				}
 
 				hasMerged = true;
@@ -1362,8 +1358,8 @@ namespace hdt
 				auto postMergeRenameIt = this->head.renameMap.find(boneName.c_str());
 
 				if (postMergeRenameIt != this->head.renameMap.end()) {
-					logger::debug("Found renamed bone {} -> {}.", boneName, postMergeRenameIt->second->cstr());
-					boneName = postMergeRenameIt->second->cstr();
+					logger::debug("Found renamed bone {} -> {}.", boneName, postMergeRenameIt->second.c_str());
+					boneName = postMergeRenameIt->second;
 					hasRenames = true;
 				}
 
@@ -1383,7 +1379,7 @@ namespace hdt
 
 		if (hasRenames) {
 			for (auto& entry : head.renameMap) {
-				if ((this->head.headParts.back().origPartRootNode && findObject(this->head.headParts.back().origPartRootNode.get(), entry.first->cstr())) || (this->head.npcFaceGeomNode && findObject(this->head.npcFaceGeomNode.get(), entry.first->cstr()))) {
+				if ((this->head.headParts.back().origPartRootNode && findObject(this->head.headParts.back().origPartRootNode.get(), entry.first)) || (this->head.npcFaceGeomNode && findObject(this->head.npcFaceGeomNode.get(), entry.first))) {
 					auto findNode = this->head.nodeUseCount.find(entry.first);
 					if (findNode != this->head.nodeUseCount.end()) {
 						findNode->second += 1;
