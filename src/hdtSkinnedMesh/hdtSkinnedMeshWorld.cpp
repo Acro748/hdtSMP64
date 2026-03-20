@@ -1,16 +1,26 @@
 #include "hdtSkinnedMeshWorld.h"
 #include "hdtBoneScaleConstraint.h"
 #include "hdtDispatcher.h"
-#include "hdtSimulationIslandManager.h"
 #include "hdtSkinnedMeshAlgorithm.h"
 #include "hdtSkyrimPhysicsWorld.h"
 #include "hdtSkyrimSystem.h"
 #include <random>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace hdt
 {
 	SkinnedMeshWorld::SkinnedMeshWorld() :
-		btDiscreteDynamicsWorldMt(nullptr, nullptr, m_solverPool, &m_constraintSolver, nullptr)
+		btDiscreteDynamicsWorldMt(
+			nullptr,
+			nullptr,
+			// Pool of regular sequential solvers one per hardware thread.
+			// Each island gets dispatched to a free solver on any thread.
+			new btConstraintSolverPoolMt(
+				std::max(1, static_cast<int>(std::thread::hardware_concurrency()))),
+			nullptr,  // no Mt solver, avoids btBatchedConstraints entirely (we are not designed for that yet)
+			nullptr)
 	{
 		btSetTaskScheduler(btGetPPLTaskScheduler());
 
@@ -18,15 +28,11 @@ namespace hdt
 
 		auto collisionConfiguration = new btDefaultCollisionConfiguration;
 		auto collisionDispatcher = new CollisionDispatcher(collisionConfiguration);
+
 		SkinnedMeshAlgorithm::registerAlgorithm(collisionDispatcher);
+
 		m_dispatcher1 = collisionDispatcher;
-
-		auto broadphase = new btDbvtBroadphase();
-		m_broadphasePairCache = broadphase;
-		m_solverPool = new btConstraintSolverPoolMt(BT_MAX_THREAD_COUNT);
-
-		//m_islandManager->~btSimulationIslandManager();
-		//new (m_islandManager) SimulationIslandManager();
+		m_broadphasePairCache = new btDbvtBroadphase();
 	}
 
 	SkinnedMeshWorld::~SkinnedMeshWorld()
@@ -36,17 +42,23 @@ namespace hdt
 				removeCollisionObject(system->m_meshes[i].get());
 
 			for (int i = 0; i < system->m_constraints.size(); ++i)
-				removeConstraint(system->m_constraints[i]->m_constraint);
+				if (system->m_constraints[i]->m_constraint)
+					removeConstraint(system->m_constraints[i]->m_constraint);
 
 			for (int i = 0; i < system->m_bones.size(); ++i)
 				removeRigidBody(&system->m_bones[i]->m_rig);
 
 			for (auto i : system->m_constraintGroups)
 				for (auto j : i->m_constraints)
-					removeConstraint(j->m_constraint);
+					if (j->m_constraint)
+						removeConstraint(j->m_constraint);
 		}
 
 		m_systems.clear();
+
+		auto solver = m_constraintSolver;
+		m_constraintSolver = nullptr;
+		delete solver;
 	}
 
 	void SkinnedMeshWorld::addSkinnedMeshSystem(SkinnedMeshSystem* system)
@@ -56,13 +68,13 @@ namespace hdt
 		}
 
 		m_systems.push_back(hdt::make_smart(system));
-
 		for (int i = 0; i < system->m_meshes.size(); ++i) {
 			addCollisionObject(system->m_meshes[i].get(), 1, 1);
 		}
 
 		for (int i = 0; i < system->m_bones.size(); ++i) {
 			system->m_bones[i]->m_rig.setActivationState(DISABLE_DEACTIVATION);
+			// 0,0 mask disables the collision of this object on Bullet.
 			addRigidBody(&system->m_bones[i]->m_rig, 0, 0);
 		}
 
@@ -87,12 +99,14 @@ namespace hdt
 
 		for (auto i : system->m_constraintGroups)
 			for (auto j : i->m_constraints)
-				removeConstraint(j->m_constraint);
+				if (j->m_constraint)
+					removeConstraint(j->m_constraint);
 
 		for (int i = 0; i < system->m_meshes.size(); ++i)
 			removeCollisionObject(system->m_meshes[i].get());
 		for (int i = 0; i < system->m_constraints.size(); ++i)
-			removeConstraint(system->m_constraints[i]->m_constraint);
+			if (system->m_constraints[i]->m_constraint)
+				removeConstraint(system->m_constraints[i]->m_constraint);
 		for (int i = 0; i < system->m_bones.size(); ++i)
 			removeRigidBody(&system->m_bones[i]->m_rig);
 
@@ -112,8 +126,13 @@ namespace hdt
 			internalSingleStepSimulation(fixedTimeStep);
 			remainingTimeStep -= fixedTimeStep;
 		}
+
 		// For the sake of the bullet library, we don't manage a step that would be lower than a 300Hz frame.
 		// Review this when (screens / Skyrim) will allow 300Hz+.
+		// Note: We are taking a final variable-sized step for the remaining time.
+		// Because Bullet's constraint solvers (ERP/CFM) are sensitive to delta-time,
+		// this variable tick can cause constraints to behave a bit differently
+		// (appearing more stiff or damping differently at various framerates).
 		constexpr auto minPossiblePeriod = 1.0f / 300.0f;
 		if (remainingTimeStep > minPossiblePeriod)
 			internalSingleStepSimulation(remainingTimeStep);
@@ -127,8 +146,8 @@ namespace hdt
 
 	void SkinnedMeshWorld::performDiscreteCollisionDetection()
 	{
-		for (int i = 0; i < m_systems.size(); ++i)
-			m_systems[i]->internalUpdate();
+		for (auto& system : m_systems)
+			system->internalUpdate();
 
 		btDiscreteDynamicsWorldMt::performDiscreteCollisionDetection();
 	}
@@ -155,7 +174,7 @@ namespace hdt
 				continue;
 			for (auto& j : i->m_bones) {
 				auto body = &j->m_rig;
-				if (!body->isStaticOrKinematicObject() && (rand() % 5))  // apply randomly 80% of the time to desync wind across npcs
+				if (!body->isStaticOrKinematicObject() && (rand() % 5))  // apply randomly 80% of the time to desync wind across bones
 				{
 					body->applyCentralForce(m_windSpeed * j->m_windFactor * system->m_windFactor);
 				}
@@ -210,28 +229,18 @@ namespace hdt
 		btDiscreteDynamicsWorldMt::integrateTransforms(timeStep);
 	}
 
+	// Island-based constraint solving...
+	// btDiscreteDynamicsWorldMt::solveConstraints decomposes the world into independent
+	// simulation islands and dispatches each to a solver from the pool on separate threads.
 	void SkinnedMeshWorld::solveConstraints(btContactSolverInfo& solverInfo)
 	{
 		BT_PROFILE("solveConstraints");
 		if (!m_collisionObjects.size())
 			return;
 
-		m_solverPool->prepareSolve(getCollisionWorld()->getNumCollisionObjects(),
-			getCollisionWorld()->getDispatcher()->getNumManifolds());
+		btDiscreteDynamicsWorldMt::solveConstraints(solverInfo);
 
-		m_constraintSolver.m_groups.clear();
-		for (auto& i : m_systems)
-			for (auto& j : i->m_constraintGroups)
-				m_constraintSolver.m_groups.push_back(j.get());
-
-		btPersistentManifold** manifold = m_dispatcher1->getInternalManifoldPointer();
-		int maxNumManifolds = m_dispatcher1->getNumManifolds();
-		m_solverPool->solveGroup(&m_collisionObjects[0], m_collisionObjects.size(), manifold, maxNumManifolds,
-			&m_constraints[0], m_constraints.size(), solverInfo, m_debugDrawer,
-			m_dispatcher1);
-
-		m_solverPool->allSolved(solverInfo, m_debugDrawer);
+		// the HDT manifolds are still recreated every frame, clear to prevent stale data.
 		static_cast<CollisionDispatcher*>(m_dispatcher1)->clearAllManifold();
-		m_constraintSolver.m_groups.clear();
 	}
 }

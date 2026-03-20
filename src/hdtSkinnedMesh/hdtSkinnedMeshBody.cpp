@@ -311,36 +311,6 @@ __kernel void updateVertices(
 	{
 		if (canCollideWith(rhs) && rhs->canCollideWith(this)) {
 			return true;
-			//if (m_useBoundingSphere && rhs->m_useBoundingSphere)
-			//{
-			//	for (auto& i : m_skinnedBones)
-			//	{
-			//		for (auto& j : rhs->m_skinnedBones)
-			//		{
-			//			if (i.isKinematic && j.isKinematic)
-			//				continue;
-			//			if (i.worldBoundingSphere.isCollide(j.worldBoundingSphere))
-			//				return true;
-			//		}
-			//	}
-			//}
-			//else if (m_useBoundingSphere)
-			//{
-			//	for (auto& i : m_skinnedBones)
-			//	{
-			//		if (rhs->m_bulletShape.m_aabb.collideWithSphere(i.worldBoundingSphere.center(), i.worldBoundingSphere.radius()))
-			//			return true;
-			//	}
-			//}
-			//else if (rhs->m_useBoundingSphere)
-			//{
-			//	for (auto& i : rhs->m_skinnedBones)
-			//	{
-			//		if (m_bulletShape.m_aabb.collideWithSphere(i.worldBoundingSphere.center(), i.worldBoundingSphere.radius()))
-			//			return true;
-			//	}
-			//}
-			//else return true;
 		}
 		return false;
 	}
