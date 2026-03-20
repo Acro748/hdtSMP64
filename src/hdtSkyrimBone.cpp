@@ -23,7 +23,7 @@ namespace hdt
 	void SkyrimBone::resetTransformToOriginal()
 	{
 		m_node->local = convertBt(m_origTransform);
-		updateTransformUpDown(m_node, false);
+		updateTransformUpDown(m_node.get(), false);
 	}
 
 	void SkyrimBone::readTransform(float timeStep)
@@ -110,7 +110,7 @@ namespace hdt
 		m_node->world = m_node->world;
 
 		if (m_forceUpdateType == 1) {
-			updateTransformUpDown(m_node, false);
+			updateTransformUpDown(m_node.get(), false);
 		} else if (m_forceUpdateType == 2) {
 			const auto& children = m_node->GetChildren();
 			for (uint16_t j = 0; j < children.size(); ++j) {
