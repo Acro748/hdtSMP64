@@ -44,6 +44,7 @@ set(SOURCE_FILES
 	"${SOURCE_DIR}/hdtSkinnedMesh/hdtVertex.h"
 	"${SOURCE_DIR}/Events.h"
 	"${SOURCE_DIR}/Events.cpp"
+	"${SOURCE_DIR}/HavokUtils.h"
 	"${SOURCE_DIR}/Hooks.cpp"
 	"${SOURCE_DIR}/Hooks.h"
 	"${SOURCE_DIR}/dhdtPapyrusFunctions.cpp"
