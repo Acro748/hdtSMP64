@@ -73,9 +73,9 @@ namespace hdt
 			return false;
 	}
 
-	// Docs: This is called by Bullet's broad phase, which finds pairs that may be colliding. We built these aabb's inside SkinnedMeshBody::updateBoundingSphereAabb() using Skyrim's bone 
+	// Docs: This is called by Bullet's broad phase, which finds pairs that may be colliding. We built these aabb's inside SkinnedMeshBody::updateBoundingSphereAabb() using Skyrim's bone
 	// spheres. This function checks if those pairs are even allowed to collide, updates the skinned shapes, then passes it to the next few phases of collision checks.
-	// Collision phases are: Bullet's broadphase, our BVH midphase, then finally our narrowphase 
+	// Collision phases are: Bullet's broadphase, our BVH midphase, then finally our narrowphase
 	void CollisionDispatcher::dispatchAllCollisionPairs(btOverlappingPairCache* pairCache, [[maybe_unused]] const btDispatcherInfo& dispatchInfo, [[maybe_unused]] btDispatcher* dispatcher)
 	{
 		auto size = pairCache->getNumOverlappingPairs();
