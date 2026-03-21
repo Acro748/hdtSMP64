@@ -1209,6 +1209,14 @@ namespace hdt
 			constraint->setParam(BT_CONSTRAINT_CFM, cinfo.motorCFM, i);
 			constraint->setParam(BT_CONSTRAINT_STOP_ERP, cinfo.stopERP, i);
 			constraint->setParam(BT_CONSTRAINT_STOP_CFM, cinfo.stopCFM, i);
+
+			auto rotMotor = constraint->getRotationalLimitMotor(i);
+			if (rotMotor) {
+				rotMotor->m_motorERP = cinfo.motorERP;
+				rotMotor->m_motorCFM = cinfo.motorCFM;
+				rotMotor->m_stopERP = cinfo.stopERP;
+				rotMotor->m_stopCFM = cinfo.stopCFM;
+			}
 		}
 		constraint->getTranslationalLimitMotor()->m_bounce = cinfo.linearBounce;
 		constraint->getRotationalLimitMotor(0)->m_bounce = cinfo.angularBounce[0];
