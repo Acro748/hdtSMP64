@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hdtSkinnedMeshSystem.h"
+#include <BulletCollision/CollisionDispatch/btSimulationIslandManager.h>
 #include <BulletDynamics/Dynamics/btDiscreteDynamicsWorldMt.h>
 
 namespace hdt
@@ -42,6 +43,7 @@ namespace hdt
 		void predictUnconstraintMotion(btScalar timeStep) override;
 		void integrateTransforms(btScalar timeStep) override;
 		void performDiscreteCollisionDetection() override;
+		void calculateSimulationIslands() override;
 		void solveConstraints(btContactSolverInfo& solverInfo) override;
 
 		std::vector<RE::BSTSmartPointer<SkinnedMeshSystem>> m_systems;
