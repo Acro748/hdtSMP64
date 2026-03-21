@@ -15,8 +15,8 @@ namespace hdt
 		void writeTransform() override;
 
 		int m_depth;
-		RE::NiNode* m_node;
-		RE::NiNode* m_skeleton;
+		RE::NiPointer<RE::NiNode> m_node;
+		RE::NiPointer<RE::NiNode> m_skeleton;
 
 	private:
 		int m_forceUpdateType;
