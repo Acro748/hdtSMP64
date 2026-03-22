@@ -144,8 +144,6 @@ namespace hdt
 
 		g_pluginInterface.onPostStep({ getCollisionObjectArray(), remainingTimeStep });
 
-		writeTransform();
-
 		if (m_doMetrics) {
 			QueryPerformanceCounter(&ticks);
 			int64_t endTime = ticks.QuadPart;
@@ -360,6 +358,11 @@ namespace hdt
 
 			m_tasks.wait();
 
+			{
+				std::lock_guard<decltype(m_lock)> l(m_lock);
+				writeTransform();
+			}
+
 			QueryPerformanceCounter(&ticks);
 			int64_t endTime = ticks.QuadPart;
 			QueryPerformanceFrequency(&ticks);
@@ -372,6 +375,11 @@ namespace hdt
 				m_averageSMPProcessingTimeInMainLoop, m_2ndStepAverageProcessingTime, 100. * m_2ndStepAverageProcessingTime / totalSMPTime);
 		} else {
 			m_tasks.wait();
+
+			{
+				std::lock_guard<decltype(m_lock)> l(m_lock);
+				writeTransform();
+			}
 		}
 
 		return RE::BSEventNotifyControl::kContinue;
