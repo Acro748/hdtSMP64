@@ -154,32 +154,46 @@ namespace hdt
 		}
 
 		btQsTransform(const btQuaternion& r, const btVector3& t, float s = 1.0f) :
-			m_basis(r), m_originScale(t.get128())
+			m_basis(r)
 		{
-			setScale(s);
+#ifdef BT_ALLOW_SSE4
+			//0x30 inserts the 0th element of _mm_set_ss into the 3rd (W) element of t
+			m_originScale.mVec128 = _mm_insert_ps(t.get128(), _mm_set_ss(s), 0x30);
+#else
+			m_originScale = t;
+			m_originScale[3] = s;
+#endif
 		}
 
-		btQsTransform(const btTransform& t, float s = 1.0f)
+		btQsTransform(const btTransform& t, float s = 1.0f) :
+			m_basis(t.getRotation())
 		{
-			m_basis = t.getRotation();
+#ifdef BT_ALLOW_SSE4
+			m_originScale.mVec128 = _mm_insert_ps(t.getOrigin().get128(), _mm_set_ss(s), 0x30);
+#else
 			m_originScale = t.getOrigin();
-			setScale(s);
+			m_originScale[3] = s;
+#endif
 		}
 
-		btQsTransform(const btQsTransform& rhs) :
-			m_basis(rhs.m_basis), m_originScale(rhs.m_originScale.get128())
-		{
-			assert(getScale() > 0);
-		}
+		btQsTransform(const btQsTransform&) = default;
+		btQsTransform(btQsTransform&&) = default;
+		btQsTransform& operator=(const btQsTransform&) = default;
+		btQsTransform& operator=(btQsTransform&&) = default;
 
-		btQuaternion getBasis() const { return m_basis; }
+		[[nodiscard]] bool isValid() const { return getScale() > 0; }
+
+		[[nodiscard]] btQuaternion getBasis() const { return m_basis; }
 		btQuaternion& getBasis() { return m_basis; }
+
 		void setBasis(const btQuaternion& q) { m_basis = q; }
 		void setBasis(const btMatrix3x3& m) { m.getRotation(m_basis); }
 
-		float getScale() const { return m_originScale[3]; }
+		[[nodiscard]] float getScale() const { return m_originScale[3]; }
 		float& getScale() { return m_originScale[3]; }
-		float getScaleReg() const { return _mm_cvtss_f32(setAll3(m_originScale.get128())); }
+
+		// Deprecated: just use getScale(), the compiler will automatically optimize register extraction..
+		[[nodiscard]] float getScaleReg() const { return getScale(); }
 
 		void setScale(float s)
 		{
@@ -187,13 +201,17 @@ namespace hdt
 			m_originScale[3] = s;
 		}
 
-		btVector3 getOrigin() const { return m_originScale; }
+		[[nodiscard]] btVector3 getOrigin() const { return m_originScale; }
 
 		void setOrigin(const btVector3& vec)
 		{
+#ifdef BT_ALLOW_SSE4
+			m_originScale.mVec128 = _mm_blend_ps(vec.get128(), m_originScale.get128(), 0b1000);
+#else
 			float s = getScale();
-			m_originScale = vec.mVec128;
-			setScale(s);
+			m_originScale = vec;
+			m_originScale[3] = s;
+#endif
 		}
 
 		void setOrigin(float x, float y, float z)
@@ -203,20 +221,15 @@ namespace hdt
 			m_originScale[2] = z;
 		}
 
-		btQsTransform& operator=(const btQsTransform& rhs)
+		[[nodiscard]] btQsTransform operator*(const btQsTransform& rhs) const
 		{
-			m_basis = rhs.m_basis;
-			m_originScale = rhs.m_originScale;
-			assert(getScale() > 0);
-			return *this;
+			return btQsTransform(
+				m_basis * rhs.m_basis,
+				getOrigin() + quatRotate(m_basis, rhs.getOrigin() * getScale()),
+				getScale() * rhs.getScale());
 		}
 
-		btQsTransform operator*(const btQsTransform& rhs) const
-		{
-			return btQsTransform(m_basis * rhs.m_basis, *this * rhs.getOrigin(), getScale() * rhs.getScale());
-		}
-
-		btVector3 operator*(const btVector3& rhs) const
+		[[nodiscard]] btVector3 operator*(const btVector3& rhs) const
 		{
 			return getOrigin() + quatRotate(m_basis, rhs * getScale());
 		}
@@ -224,21 +237,33 @@ namespace hdt
 		void operator*=(const btQsTransform& rhs)
 		{
 			float s = getScale();
-			setOrigin(getOrigin() + quatRotate(m_basis, rhs.getOrigin() * s));
+			float newScale = s * rhs.getScale();
+			btVector3 newOrigin = getOrigin() + quatRotate(m_basis, rhs.getOrigin() * s);
 			m_basis *= rhs.m_basis;
-			setScale(s * rhs.getScale());
+
+#ifdef BT_ALLOW_SSE4
+			m_originScale.mVec128 = _mm_insert_ps(newOrigin.get128(), _mm_set_ss(newScale), 0x30);
+#else
+			m_originScale = newOrigin;
+			m_originScale[3] = newScale;
+#endif
 		}
 
-		btQsTransform inverse() const
+		[[nodiscard]] btQsTransform inverse() const
 		{
-			auto r = m_basis.inverse();
-			auto s = 1 / getScale();
+			btQuaternion r = m_basis.inverse();
+			float s = 1.0f / getScale();
 			return btQsTransform(r, quatRotate(r, -getOrigin() * s), s);
 		}
 
-		btTransform asTransform() const
+		[[nodiscard]] btTransform asTransform() const
 		{
 			return btTransform(m_basis, m_originScale);
+		}
+
+		[[nodiscard]] static btQsTransform getIdentity()
+		{
+			return btQsTransform();  // Returns value utilizing XMM registers directly, skipping threadsafe static guards
 		}
 	};
 
