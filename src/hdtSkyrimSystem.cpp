@@ -1,6 +1,7 @@
 #include "hdtSkyrimSystem.h"
 #include "hdtSkinnedMesh/hdtSkinnedMeshShape.h"
 
+#include "HavokUtils.h"
 #include "XmlReader.h"
 #include "hdtSkyrimPhysicsWorld.h"
 
@@ -200,15 +201,15 @@ namespace hdt
 		m_model = model;
 		m_filePath = path;
 
-		if (!old_system) {
-			updateTransformUpDown(m_skeleton, true);
-		}
-
 		XMLReader reader((uint8_t*)loaded.data(), loaded.size());
 		m_reader = &reader;
 
 		m_reader->nextStartElement();
 		if (m_reader->GetName() != "system") {
+			if (!old_system) {
+				updateTransformUpDown(m_skeleton, true);
+			}
+
 			return nullptr;
 		}
 
@@ -222,6 +223,37 @@ namespace hdt
 
 		// Set locale to en_US
 		std::setlocale(LC_NUMERIC, "en_US");
+
+		// This forces the skeleton into a neutral reference pose, which avoids building invalid shape data
+		// We pull the references directly from havok for the exact same reference data the engine uses
+		std::vector<std::pair<RE::NiAVObject*, RE::NiTransform>> savedPoses;
+
+		if (auto* userData = skeleton->GetUserData()) {
+			if (auto* actor = userData->As<RE::Actor>()) {
+				if (auto havokSkel = havok::getAnimationSkeleton(actor)) {
+					savedPoses.reserve(havokSkel->bones.size());
+
+					for (int32_t i = 0; i < static_cast<int32_t>(havokSkel->bones.size()); ++i) {
+						if (auto boneNode = skeleton->GetObjectByName(RE::BSFixedString(havokSkel->bones[i].name.data()))) {
+							savedPoses.emplace_back(boneNode, boneNode->local);
+
+							RE::hkQsTransform refPose;
+							if (havok::getReferencePoseByIndex(havokSkel, i, refPose))
+								boneNode->local = havok::hKQsTransformToNiTransform(refPose);
+						}
+					}
+
+					if (!savedPoses.empty()) {
+						RE::NiUpdateData updateData;
+						skeleton->Update(updateData);
+					}
+				}
+			}
+		}
+
+		if (!old_system) {
+			updateTransformUpDown(m_skeleton, true);
+		}
 
 		try {
 			while (m_reader->Inspect()) {
@@ -313,6 +345,13 @@ namespace hdt
 		std::sort(m_mesh->m_bones.begin(), m_mesh->m_bones.end(), [](const auto& a, const auto& b) {
 			return static_cast<SkyrimBone*>(a.get())->m_depth < static_cast<SkyrimBone*>(b.get())->m_depth;
 		});
+
+		// Restore the original pose to avoid a visual 1 havok tick T-Pose (Only for visual reasons, it wont break anything otherwise)
+		for (auto& [node, transform] : savedPoses) node->local = transform;
+		if (!savedPoses.empty()) {
+			RE::NiUpdateData updateData;
+			skeleton->Update(updateData);
+		}
 
 		return m_mesh->valid() ? m_mesh : nullptr;
 	}
