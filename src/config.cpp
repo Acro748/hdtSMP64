@@ -9,7 +9,6 @@
 
 namespace hdt
 {
-	int g_logLevel;
 
 	static void solver(XMLReader& reader)
 	{
@@ -73,7 +72,9 @@ namespace hdt
 			switch (reader.GetInspected()) {
 			case XMLReader::Inspected::StartTag:
 				if (reader.GetLocalName() == "logLevel") {
-					g_logLevel = reader.readInt();
+					// Inverted so: 0 = critical, 1 = err, 2 = warn, 3 = info, 4 = debug, 5 = trace.
+					auto level = 5 - std::clamp(reader.readInt(), 0, 5);
+					spdlog::set_level(static_cast<spdlog::level::level_enum>(level));
 				} else if (reader.GetLocalName() == "backupNodeByName") {
 					// Parse the string return value from reader.readText(); so we can have single strings instead of the group, example text -> "Virtual Hands, Virtual Body, Virtual Belly"... said text in a array like so -> { "Virtual Hands", "Virtual Body", "Virtual Belly"
 
