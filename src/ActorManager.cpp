@@ -369,9 +369,17 @@ namespace hdt
 		if (m_shutdown)
 			return;
 
-		// We get the player character and its cell.
+		// Purge dead skeletons before doing any work on them.
+		std::erase_if(m_skeletons, [](Skeleton& i) {
+			if (i.skeleton->_refCount == 1) {
+				i.clear();
+				return true;
+			}
+			return false;
+		});
+
 		// TODO Isn't there a more performing way to find the PC?? A singleton? And if it's the right way, why isn't it in utils functions?
-		const auto& playerCharacter = std::find_if(m_skeletons.begin(), m_skeletons.end(), [](const Skeleton& s) { return s.isPlayerCharacter(); });
+		const auto playerCharacter = std::ranges::find_if(m_skeletons, &Skeleton::isPlayerCharacter);
 		auto playerCell = (playerCharacter != m_skeletons.end() && playerCharacter->skeleton->parent) ? playerCharacter->skeleton->parent->parent : nullptr;
 
 		const auto cameraNode = getCameraNode();
@@ -382,87 +390,78 @@ namespace hdt
 		const auto cameraTransform = cameraNode->world;
 		const auto cameraPosition = cameraTransform.translate;
 		const auto cameraOrientation = cameraTransform.rotate * RE::NiPoint3(0., 1., 0.);  // The camera matrix is relative to the world.
-		this->m_cameraPositionDuringFrame = cameraPosition;
+		m_cameraPositionDuringFrame = cameraPosition;
 
-		std::for_each(m_skeletons.begin(), m_skeletons.end(), [&](Skeleton& skel) {
+		for (auto& skel : m_skeletons)
 			skel.calculateDistanceAndOrientationDifferenceFromSource(cameraPosition, cameraOrientation);
-		});
 
-		// We sort the skeletons depending on the angle and distance.
-		std::sort(m_skeletons.begin(), m_skeletons.end(), [](auto&& a_lhs, auto&& a_rhs) {
-			auto cr = a_rhs.m_cosAngleFromCameraDirectionTimesSkeletonDistance;
-			auto cl = a_lhs.m_cosAngleFromCameraDirectionTimesSkeletonDistance;
-			auto dr = a_rhs.m_distanceFromCamera2;
-			auto dl = a_lhs.m_distanceFromCamera2;
-			return
-				// If one of the skeletons is at distance zero (1st person player) from the camera
-				(btFuzzyZero(dl) || btFuzzyZero(dr))
-					// then it is first.
-					?
-					(dl < dr)
-					// If one of the skeletons is exactly on the side of the camera (cos = 0)
-					:
-					(btFuzzyZero(cl) || btFuzzyZero(cr))
-						// then it is last.
-						?
-					abs(cl) > abs(cr)
-					// If both are on the same side of the camera (product of cos > 0):
-					// we want first the smallest angle (so the highest cosinus), and the smallest distance,
-					// so we want the smallest distance / cosinus.
-					// cl = cosinus * distance, dl = distance� => distance / cosinus = dl/cl
-					// So we want dl/cl < dr/cr.
-					// Moreover, this test manages the case where one of the skeletons is behind the camera and the other in front of the camera too;
-					// the one behind the camera is last (the one with cos(angle) = cr < 0).
-					:
-					(dl * cr < dr * cl);
+		// We sort the skeletons depending on the angle and distance from camera.
+		std::ranges::sort(m_skeletons, [](const Skeleton& a_lhs, const Skeleton& a_rhs) {
+			const auto cl = a_lhs.m_cosAngleFromCameraDirectionTimesSkeletonDistance;
+			const auto cr = a_rhs.m_cosAngleFromCameraDirectionTimesSkeletonDistance;
+			const auto dl = a_lhs.m_distanceFromCamera2;
+			const auto dr = a_rhs.m_distanceFromCamera2;
+
+			// If one of the skeletons is at distance zero (1st person player) from the camera, then it is first.
+			if (btFuzzyZero(dl) || btFuzzyZero(dr))
+				return dl < dr;
+
+			// If one of the skeletons is exactly on the side of the camera (cos = 0), then it is last.
+			if (btFuzzyZero(cl) || btFuzzyZero(cr))
+				return std::abs(cl) > std::abs(cr);
+
+			// we want first the smallest angle (so the highest cosinus), and the smallest distance,
+			// so we want the smallest distance / cosinus.
+			// cl = cosinus * distance, dl = distance² => distance / cosinus = dl/cl
+			// So we want dl/cl < dr/cr.
+			// Moreover, this test manages the case where one of the skeletons is behind the camera and the other in front;
+			// the one behind the camera is last (the one with cos(angle) = cr < 0).
+			return dl * cr < dr * cl;
 		});
 
 		// We set which skeletons are active and we count them.
+		const auto world = SkyrimPhysicsWorld::get();
+		const auto wind = getWindDirection();
+		const bool windEnabled = world->m_enableWind && wind && !btFuzzyZero(hdt::magnitude(*wind));
+
 		activeSkeletons = 0;
 		for (auto& i : m_skeletons) {
-			if (i.skeleton->_refCount == 1) {
-				i.clear();
-				i.skeleton = nullptr;
-			} else if (i.hasPhysics && i.updateAttachedState(playerCell, activeSkeletons >= maxActiveSkeletons)) {
-				activeSkeletons++;
-				//check wind obstructions
-				const auto world = SkyrimPhysicsWorld::get();
-				const auto wind = getWindDirection();
-				if (world->m_enableWind && wind && !(btFuzzyZero(hdt::magnitude(*wind)))) {
-					const auto owner = skyrim_cast<RE::Actor*>(i.skeletonOwner.get());
-					if (owner) {
-						auto windray = *wind * -1;  // reverse wind raycast to find obstruction
-						RE::NiPoint3 hitLocation;
-						//Raycast for object in direction of wind
-						const auto object = Actor_CalculateLOS(owner, &windray, &hitLocation, 6.28);
-						if (object) {
-							// object found
-							auto diff = (owner->data.location - hitLocation);
-							diff.z = 0;  //remove z component difference
-							const auto dist = hdt::magnitude(diff);
-							// wind is a linear reduction, with a minimum floor since objects may have a minimum distance
-							// windfactor = 0 when dist <= m_distanceForNoWind, = 1 when dist >= m_distanceForMaxWind, and is linear with dist between these 2 values.
-							const auto windFactor = std::clamp((dist - world->m_distanceForNoWind) / (world->m_distanceForMaxWind - world->m_distanceForNoWind), 0.f, 1.f);
-							if (!btFuzzyZero(windFactor - i.getWindFactor())) {
-								logger::debug("{} blocked by {} with distance {:.2f}; setting windFactor {:.2f}.", i.name(), object->name, dist, windFactor);
-								i.updateWindFactor(windFactor);
-							}
-						}
-					} else {
-						logger::debug("{} is active skeleton, but failed to cast to Actor, no wind obstruction check possible.", i.name());
-					}
-				}
+			if (!i.hasPhysics || !i.updateAttachedState(playerCell, activeSkeletons >= maxActiveSkeletons))
+				continue;
+
+			activeSkeletons++;
+
+			// Check wind obstructions for active skeletons.
+			if (!windEnabled)
+				continue;
+
+			const auto owner = skyrim_cast<RE::Actor*>(i.skeletonOwner.get());
+			if (!owner) {
+				logger::debug("{} is active skeleton, but failed to cast to Actor, no wind obstruction check possible.", i.name());
+				continue;
+			}
+
+			auto windray = *wind * -1;  // reverse wind raycast to find obstruction
+			RE::NiPoint3 hitLocation;
+			const auto object = Actor_CalculateLOS(owner, &windray, &hitLocation, std::numbers::pi_v<float> * 2.f);
+			if (!object)
+				continue;
+
+			auto diff = owner->data.location - hitLocation;
+			diff.z = 0;  // remove z component difference
+			const auto dist = hdt::magnitude(diff);
+			// windfactor = 0 when dist <= m_distanceForNoWind, = 1 when dist >= m_distanceForMaxWind, and is linear with dist between these 2 values.
+			const auto windFactor = std::clamp((dist - world->m_distanceForNoWind) / (world->m_distanceForMaxWind - world->m_distanceForNoWind), 0.f, 1.f);
+			if (!btFuzzyZero(windFactor - i.getWindFactor())) {
+				logger::debug("{} blocked by {} with distance {:.2f}; setting windFactor {:.2f}.", i.name(), object->name, dist, windFactor);
+				i.updateWindFactor(windFactor);
 			}
 		}
-
-		m_skeletons.erase(std::remove_if(m_skeletons.begin(), m_skeletons.end(), [](Skeleton& i) { return !i.skeleton; }), m_skeletons.end());
 
 		for (auto& i : m_skeletons) {
 			i.cleanArmor();
 			i.cleanHead();
 		}
-
-		const auto world = SkyrimPhysicsWorld::get();
 
 		// We share the same doMetrics condition here and in hdtSkyrimPhysicsWorld to avoid any gap between both.
 		// The evaluation is done here rather than in hdtSkyrimPhysicsWorld because this event is called first.
@@ -475,10 +474,7 @@ namespace hdt
 			// 30% of processing time is in hdt per profiling;
 			// Setting it higher provides more time for hdt processing and can activate more skeletons.
 			const auto target_time = world->m_timeTick * world->m_percentageOfFrameTime;
-			auto averageTimePerSkeletonInMainLoop = 0.f;
-			if (activeSkeletons > 0) {
-				averageTimePerSkeletonInMainLoop = averageProcessingTimeInMainLoop / activeSkeletons;
-			}
+			const auto averageTimePerSkeletonInMainLoop = activeSkeletons > 0 ? averageProcessingTimeInMainLoop / activeSkeletons : 0.f;
 
 			logger::trace(
 				"msecs/activeSkeleton {:.2f} activeSkeletons/maxActive/total {}/{}/{} processTimeInMainLoop/targetTime {:.2f}/{:.2f}",
@@ -939,26 +935,29 @@ namespace hdt
 		//if (isPlayerCharacter())
 		//	return true;
 
+		auto* manager = ActorManager::instance();
+		const float minDist = manager->m_minCullingDistance;
+
 		// We always enable the skeletons that are just around the camera.
 		// It's useful if for example the skeleton origin is very near, behind the camera,
-		// but some parts or the skeleton are in front of the camera and need to be animated.
-		auto i = ActorManager::instance();
-		float minDistance = i->m_minCullingDistance;
-		if (m_distanceFromCamera2 < minDistance * minDistance)
+		// but some parts of the skeleton are in front of the camera and need to be animated.
+		if (m_distanceFromCamera2 < minDist * minDist)
 			return true;
 
-		// We don't enable the skeletons behind the camera or on its side.
-		if (m_cosAngleFromCameraDirectionTimesSkeletonDistance <= 0)
+		auto* owner = skyrim_cast<RE::Actor*>(skeletonOwner.get());
+		if (!owner)
+			return true;  // should never happen, a skeleton without owner?
+
+		// We don't enable the skeletons off-screen
+		auto* camera = RE::Main::WorldRootCamera();
+		auto* skeleton3D = owner->Get3D(false);
+
+		if (!skeleton3D || (camera && !camera->NodeInFrustum(skeleton3D)))
 			return false;
 
-		// We enable only the skeletons that can see the PC or the camera
-		const auto owner = skyrim_cast<RE::Actor*>(this->skeletonOwner.get());
-		if (owner) {
-			RE::NiPoint3 hitLocation;
-			const auto object = Actor_CalculateLOS(owner, &(i->m_cameraPositionDuringFrame), &hitLocation, 6.28);
-			return object ? false : true;  // If object, we hit something on the path
-		}
-		return true;  // should never happen, a skeleton without owner?
+		RE::NiPoint3 hitLocation;
+		auto* obstacle = Actor_CalculateLOS(owner, &manager->m_cameraPositionDuringFrame, &hitLocation, 6.28f);
+		return !obstacle;  // If obstacle, we hit something on the path
 	}
 
 	std::optional<RE::NiPoint3> ActorManager::Skeleton::position() const
