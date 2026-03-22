@@ -58,7 +58,9 @@
         }
       },
       "hidden": true,
-      "inherits": ["windows"],
+      "inherits": [
+        "windows"
+      ],
       "name": "windows-avx"
     },
     {
@@ -69,7 +71,9 @@
         }
       },
       "hidden": true,
-      "inherits": ["windows"],
+      "inherits": [
+        "windows"
+      ],
       "name": "windows-avx2"
     },
     {
@@ -80,7 +84,9 @@
         }
       },
       "hidden": true,
-      "inherits": ["windows"],
+      "inherits": [
+        "windows"
+      ],
       "name": "windows-avx512"
     },
     {
