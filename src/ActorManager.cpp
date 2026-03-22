@@ -371,7 +371,7 @@ namespace hdt
 
 		// Purge dead skeletons before doing any work on them.
 		std::erase_if(m_skeletons, [](Skeleton& i) {
-			if (i.skeleton->_refCount == 1) {
+			if (!i.skeleton || i.skeleton->_refCount == 1) {
 				i.clear();
 				return true;
 			}
