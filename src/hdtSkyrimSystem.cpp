@@ -346,7 +346,7 @@ namespace hdt
 			return static_cast<SkyrimBone*>(a.get())->m_depth < static_cast<SkyrimBone*>(b.get())->m_depth;
 		});
 
-		// Restore the original pose to avoid a visual 1 havok tick T-Pose (Only for visual reasons, it wont break anything otherwise)
+		// Restore the original pose to avoid a visual 1 Havok tick T-pose (only for visual reasons, it won't break anything otherwise)
 		for (auto& [node, transform] : savedPoses) node->local = transform;
 		if (!savedPoses.empty()) {
 			RE::NiUpdateData updateData;
