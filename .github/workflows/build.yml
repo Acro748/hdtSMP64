@@ -120,12 +120,11 @@ jobs:
     steps:
       - id: filter
         shell: bash
+        env:
+          COMMITS: ${{ toJson(github.event.commits) }}
         run: |
-          # We get all the commit messages from the push in JSON
-          COMMITS='${{ toJson(github.event.commits) }}'
           SHOULD_RELEASE=false
           # We loop through each message
-          # -c ensures each commit message is on exactly one line (escaped)
           while read -r msg; do
             # Skip empty messages
             [[ -z "$msg" ]] && continue
