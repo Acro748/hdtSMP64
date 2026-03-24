@@ -190,7 +190,7 @@ git submodule update --init --recursive
 cmake --preset vs2022-windows-nocuda-avx2
 
 #
-cmake --build build --config Release
+cmake --build --preset avx2-release
 ```
 
 ## Build Targets

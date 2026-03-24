@@ -189,7 +189,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            build/vcpkg_installed
+            out/build/${{ matrix.preset }}/vcpkg_installed
             ~\AppData\Local\vcpkg\archives
           # Adding the preset name to the key ensures the presets don't overwrite each other's cache
           key: vcpkg-${{ runner.os }}-${{ github.ref_name }}-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'cmake/ports/**') }}
@@ -213,20 +213,20 @@ jobs:
           cmake --preset ${{ matrix.preset }} `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_MANIFEST_MODE=ON `
-            -DCompiledPluginsPath="${{ github.workspace }}/build/plugins"
+            -DCompiledPluginsPath="${{ github.workspace }}/out/build/${{ matrix.preset }}/plugins"
 
       - name: Create the CompiledPluginsPath folder structure
-        run: mkdir -p "${{ github.workspace }}/build/plugins/SKSE/Plugins/"
+        run: mkdir -p "${{ github.workspace }}/out/build/${{ matrix.preset }}/plugins/SKSE/Plugins/"
         shell: bash
 
       - name: Build according to the preset
-        run: cmake --build build --config Release
+        run: cmake --build out/build/${{ matrix.preset }} --config Release
 
       - name: Upload the build folder
         uses: actions/upload-artifact@v4
         with:
           name: raw-${{ matrix.preset }}
-          path: build/plugins/
+          path: out/build/${{ matrix.preset }}/plugins/
 
   release:
     needs: [prepare, build, check_messages]
