@@ -422,4 +422,30 @@ namespace hdt
 	template <class T>
 	using vectorA16 = std::vector<T>;
 
+	class SpinLock
+	{
+		std::atomic<bool> m_flag{ false };
+
+	public:
+		void lock() noexcept
+		{
+			for (;;) {
+				if (!m_flag.exchange(true, std::memory_order_acquire))
+					return;
+				// spin on cachelocal read until it looks free
+				while (m_flag.load(std::memory_order_relaxed))
+					_mm_pause();
+			}
+		}
+
+		void unlock() noexcept
+		{
+			m_flag.store(false, std::memory_order_release);
+		}
+
+		bool try_lock() noexcept
+		{
+			return !m_flag.exchange(true, std::memory_order_acquire);
+		}
+	};
 }
