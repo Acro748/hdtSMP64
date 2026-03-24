@@ -673,18 +673,36 @@ namespace hdt
 
 	void ActorManager::Skeleton::doSkeletonClean(RE::NiNode* dst, std::string_view prefix)
 	{
-		auto& children = dst->GetChildren();
+		std::vector<std::pair<RE::NiNode*, RE::NiAVObject*>> toDetach;
 
-		for (uint16_t i = children.size(); i-- > 0;) {
-			auto child = castNiNode(children[static_cast<std::uint16_t>(i)].get());
-			if (!child)
-				continue;
+		std::function<void(RE::NiNode*)> traverse = [&](RE::NiNode* node) {
+			if (!node)
+				return;
+			for (auto& childPtr : node->GetChildren()) {
+				if (!childPtr)
+					continue;
+				auto* rawChild = childPtr.get();
 
-			if (prefix == std::string_view(child->name).substr(0, prefix.size())) {
-				dst->DetachChildAt2(i);
-			} else {
-				doSkeletonClean(child, prefix);
+				const char* cname = rawChild->name.c_str();
+				std::string_view childName = (cname && cname[0]) ? std::string_view(cname) : std::string_view{};
+
+				if (childName.size() >= prefix.size() &&
+					childName.substr(0, prefix.size()) == prefix) {
+					toDetach.push_back({ node, rawChild });
+				} else {
+					auto* childNode = rawChild->AsNode();
+					if (childNode) {
+						traverse(childNode);
+					}
+				}
 			}
+		};
+
+		traverse(dst);
+
+		for (auto& [parent, child] : toDetach) {
+			RE::NiPointer<RE::NiAVObject> ref;
+			parent->DetachChild(child, ref);
 		}
 	}
 
@@ -1110,9 +1128,12 @@ namespace hdt
 		// clean swapped out headparts
 		cleanHead();
 
-		this->head.headNode = hdt::make_nismart(headNode);
-		++this->head.id;
-		this->head.prefix = headPrefix(this->head.id);
+		// Todo: This didn't have a null check before, but I don't see why not.
+		if (!this->head.headNode) {
+			this->head.headNode = hdt::make_nismart(headNode);
+			++this->head.id;
+			this->head.prefix = headPrefix(this->head.id);
+		}
 
 		auto it = std::find_if(this->head.headParts.begin(), this->head.headParts.end(), [geometry](const Head::HeadPart& p) {
 			return p.headPart == geometry;
