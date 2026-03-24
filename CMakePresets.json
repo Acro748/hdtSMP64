@@ -1,7 +1,7 @@
 {
   "configurePresets": [
     {
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": {
           "type": "STRING",
@@ -228,6 +228,20 @@
       ],
       "name": "vs2022-windows-cuda-avx512",
       "toolset": "v143"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "avx2-debug",
+      "displayName": "Debug",
+      "configurePreset": "vs2022-windows-nocuda-avx2",
+      "configuration": "Debug"
+    },
+    {
+      "name": "avx2-release",
+      "displayName": "Release",
+      "configurePreset": "vs2022-windows-nocuda-avx2",
+      "configuration": "Release"
     }
   ],
   "version": 3
