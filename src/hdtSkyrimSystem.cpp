@@ -821,11 +821,11 @@ namespace hdt
 				} else if (nodeName == "can-collide-with-bone") {
 					auto bone = getOrCreateBone(m_reader->readText());
 					if (bone)
-						body->m_canCollideWithBones.push_back(bone);
+						body->m_canCollideWithBones.insert(bone);
 				} else if (nodeName == "no-collide-with-bone") {
 					auto bone = getOrCreateBone(m_reader->readText());
 					if (bone)
-						body->m_noCollideWithBones.push_back(bone);
+						body->m_noCollideWithBones.insert(bone);
 				} else if (nodeName == "weight-threshold") {
 					auto boneName = m_reader->getAttribute("bone");
 					float wt = m_reader->readFloat();
@@ -920,11 +920,11 @@ namespace hdt
 				} else if (nodeName == "can-collide-with-bone") {
 					auto bone = getOrCreateBone(m_reader->readText());
 					if (bone)
-						body->m_canCollideWithBones.push_back(bone);
+						body->m_canCollideWithBones.insert(bone);
 				} else if (nodeName == "no-collide-with-bone") {
 					auto bone = getOrCreateBone(m_reader->readText());
 					if (bone)
-						body->m_noCollideWithBones.push_back(bone);
+						body->m_noCollideWithBones.insert(bone);
 				} else if (nodeName == "weight-threshold") {
 					auto boneName = m_reader->getAttribute("bone");
 					float wt = m_reader->readFloat();
