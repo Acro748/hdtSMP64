@@ -136,4 +136,10 @@ namespace hdt
 			}
 		}
 	}
+
+	static inline RE::NiPoint3 rotate(const RE::NiPoint3& v, const RE::NiPoint3& axis, float theta)
+	{
+		const float cosTheta = std::cos(theta);
+		return (v * cosTheta) + (axis.Cross(v) * std::sin(theta)) + (axis * axis.Dot(v)) * (1.0f - cosTheta);
+	}
 }
