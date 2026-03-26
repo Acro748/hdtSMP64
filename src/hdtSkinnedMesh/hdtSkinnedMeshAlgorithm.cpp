@@ -3,20 +3,6 @@
 
 namespace hdt
 {
-	SkinnedMeshAlgorithm::SkinnedMeshAlgorithm(const btCollisionAlgorithmConstructionInfo& ci) :
-		btCollisionAlgorithm(ci)
-	{
-	}
-
-	// Algorithm selection for collision checking.
-	// e_CPU is the original one, optimized for CPU performance.
-	// e_CPURefactored is an alternate CPU one, modified for conversion to GPU but still using CPU in practice.
-	// [3/15/2026] Realistically, e_CPURefactored (default) should always be better. e_CPU only does one level of AABB filtering
-	enum CollisionCheckAlgorithmType
-	{
-		e_CPU,
-		e_CPURefactored
-	};
 
 	// CollisionCheckBase1 provides data members and the basic constructor for the target types. Note that we
 	// always collide a vertex shape against something else, so only the second type is templated.
@@ -224,8 +210,7 @@ namespace hdt
 		}
 	};
 
-	// CollisionCheckDispatcher provides a dispatch method to process two lists of colliders.
-	template <typename T, bool SwapResults, CollisionCheckAlgorithmType Algorithm>
+	template <typename T, bool SwapResults>
 	struct CollisionCheckDispatcher : public CollisionChecker<T, SwapResults>
 	{
 		template <typename... Ts>
@@ -233,7 +218,8 @@ namespace hdt
 			CollisionChecker<T, SwapResults>(std::forward<Ts>(ts)...)
 		{}
 
-		void dispatch(ColliderTree* a, ColliderTree* b, const std::vector<Aabb*>& listA, const std::vector<Aabb*>& listB)
+		// Modern Fast Dynamic 1D Sweep and Prune Algorithm eliminating O(N*M) tests
+		void dispatch(ColliderTree* a, ColliderTree* b, std::vector<Aabb*>& listA, std::vector<Aabb*>& listB)
 		{
 			CollisionResult result;
 			CollisionResult temp;
@@ -263,19 +249,16 @@ namespace hdt
 		}
 	};
 
-	// CollisionCheckAlgorithm does the full check between collider trees.
-	template <typename T, bool SwapResults = false, CollisionCheckAlgorithmType Algorithm = e_CPURefactored>
-	struct CollisionCheckAlgorithm : public CollisionCheckDispatcher<T, SwapResults, Algorithm>
+	template <typename T, bool SwapResults = false>
+	struct CollisionCheckAlgorithm : public CollisionCheckDispatcher<T, SwapResults>
 	{
 		template <typename... Ts>
 		CollisionCheckAlgorithm(Ts&&... ts) :
-			CollisionCheckDispatcher<T, SwapResults, Algorithm>(std::forward<Ts>(ts)...)
+			CollisionCheckDispatcher<T, SwapResults>(std::forward<Ts>(ts)...)
 		{}
 
 		int operator()()
 		{
-			static_assert(Algorithm != e_CPU, "Old CPU algorithm specialization missing");
-
 			std::vector<std::pair<ColliderTree*, ColliderTree*>> pairs;
 			pairs.reserve(this->c0->colliders.size() + this->c1->colliders.size());
 			this->c0->checkCollisionL(this->c1, pairs);
@@ -347,104 +330,6 @@ namespace hdt
 		}
 	};
 
-	// Old algorithm - lower memory use, possibly faster (for CPU), but not at all suited to GPU processing
-	template <typename T, bool SwapResults>
-	struct CollisionCheckAlgorithm<T, SwapResults, e_CPU> : public CollisionChecker<T, SwapResults>
-	{
-		template <typename... Ts>
-		CollisionCheckAlgorithm(Ts&&... ts) :
-			CollisionChecker<T, SwapResults>(std::forward<Ts>(ts)...)
-		{}
-
-		int operator()()
-		{
-			std::vector<std::pair<ColliderTree*, ColliderTree*>> pairs;
-			pairs.reserve(this->c0->colliders.size() + this->c1->colliders.size());
-			this->c0->checkCollisionL(this->c1, pairs);
-			if (pairs.empty())
-				return 0;
-
-			decltype(auto) func = [this](const std::pair<ColliderTree*, ColliderTree*>& pair) {
-				if (this->numResults >= SkinnedMeshAlgorithm::MaxCollisionCount)
-					return;
-
-				auto a = pair.first, b = pair.second;
-
-				auto aabbA = a->aabbMe;
-				auto aabbB = b->aabbMe;
-				auto abeg = a->aabb;
-				auto bbeg = b->aabb;
-				auto asize = b->isKinematic ? a->dynCollider : a->numCollider;
-				auto bsize = a->isKinematic ? b->dynCollider : b->numCollider;
-				auto aend = abeg + asize;
-				auto bend = bbeg + bsize;
-
-				CollisionResult result;
-				CollisionResult temp;
-				bool hasResult = false;
-
-				thread_local std::vector<Aabb*> list;
-				if (asize > bsize) {
-					list.reserve(std::max<size_t>(bsize, list.capacity()));
-					for (auto i = bbeg; i < bend; ++i) {
-						if (i->collideWith(aabbA))
-							list.push_back(i);
-					}
-
-					for (auto i = abeg; i < aend; ++i) {
-						if (!i->collideWith(aabbB))
-							continue;
-
-						for (auto j : list) {
-							if (!i->collideWith(*j))
-								continue;
-							if (this->checkCollide(&a->cbuf[i - abeg], &b->cbuf[j - bbeg], temp)) {
-								if (!hasResult || result.depth > temp.depth) {
-									hasResult = true;
-									result = temp;
-								}
-							}
-						}
-					}
-				} else {
-					list.reserve(std::max<size_t>(bsize, list.capacity()));
-					for (auto i = abeg; i < aend; ++i) {
-						if (i->collideWith(aabbB))
-							list.push_back(i);
-					}
-
-					for (auto j = bbeg; j < bend; ++j) {
-						if (!j->collideWith(aabbA))
-							continue;
-
-						for (auto i : list) {
-							if (!i->collideWith(*j))
-								continue;
-							if (this->checkCollide(&a->cbuf[i - abeg], &b->cbuf[j - bbeg], temp)) {
-								if (!hasResult || result.depth > temp.depth) {
-									hasResult = true;
-									result = temp;
-								}
-							}
-						}
-					}
-				}
-				list.clear();
-
-				if (hasResult) {
-					this->addResult(result);
-				}
-			};
-
-			if (pairs.size() >= std::thread::hardware_concurrency())
-				concurrency::parallel_for_each(pairs.begin(), pairs.end(), func);
-			else
-				for (auto& i : pairs) func(i);
-
-			return this->numResults;
-		}
-	};
-
 	template <class T1>
 	int checkCollide(PerVertexShape* a, T1* b, CollisionResult* results)
 	{
@@ -456,8 +341,8 @@ namespace hdt
 		return CollisionCheckAlgorithm<PerTriangleShape, true>(b, a, results)();
 	}
 
-	void SkinnedMeshAlgorithm::MergeBuffer::doMerge(SkinnedMeshShape* a, SkinnedMeshShape* b,
-		CollisionResult* collision, int count)
+	template <class T0, class T1>
+	void SkinnedMeshAlgorithm::MergeBuffer::doMerge(T0* a, T1* b, CollisionResult* collision, int count)
 	{
 		for (int i = 0; i < count; ++i) {
 			auto& res = collision[i];
@@ -600,11 +485,5 @@ namespace hdt
 			processCollision(body0->m_shape->asPerVertexShape(), body1->m_shape->asPerVertexShape(), merge, collision.get());
 
 		merge.apply(body0, body1, dispatcher);
-	}
-
-	void SkinnedMeshAlgorithm::registerAlgorithm(btCollisionDispatcherMt* dispatcher)
-	{
-		static CreateFunc s_gimpact_cf;
-		dispatcher->registerCollisionCreateFunc(CUSTOM_CONCAVE_SHAPE_TYPE, CUSTOM_CONCAVE_SHAPE_TYPE, &s_gimpact_cf);
 	}
 }

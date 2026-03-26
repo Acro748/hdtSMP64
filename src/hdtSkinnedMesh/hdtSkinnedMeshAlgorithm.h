@@ -5,36 +5,9 @@
 
 namespace hdt
 {
-	class SkinnedMeshAlgorithm : public btCollisionAlgorithm
+	class SkinnedMeshAlgorithm
 	{
 	public:
-		SkinnedMeshAlgorithm(const btCollisionAlgorithmConstructionInfo& ci);
-
-		void processCollision([[maybe_unused]] const btCollisionObjectWrapper* body0Wrap, [[maybe_unused]] const btCollisionObjectWrapper* body1Wrap, [[maybe_unused]] const btDispatcherInfo& dispatchInfo, [[maybe_unused]] btManifoldResult* resultOut) override
-		{
-		}
-
-		btScalar calculateTimeOfImpact([[maybe_unused]] btCollisionObject* body0, [[maybe_unused]] btCollisionObject* body1, [[maybe_unused]] const btDispatcherInfo& dispatchInfo, [[maybe_unused]] btManifoldResult* resultOut) override
-		{
-			return 1;
-		}  // TOI cost too much
-		void getAllContactManifolds([[maybe_unused]] btManifoldArray& manifoldArray) override
-		{
-		}
-
-		struct CreateFunc : public btCollisionAlgorithmCreateFunc
-		{
-			btCollisionAlgorithm* CreateCollisionAlgorithm(btCollisionAlgorithmConstructionInfo& ci,
-				[[maybe_unused]] const btCollisionObjectWrapper* body0Wrap,
-				[[maybe_unused]] const btCollisionObjectWrapper* body1Wrap) override
-			{
-				void* mem = ci.m_dispatcher1->allocateCollisionAlgorithm(sizeof(SkinnedMeshAlgorithm));
-				return new (mem) SkinnedMeshAlgorithm(ci);
-			}
-		};
-
-		static void registerAlgorithm(btCollisionDispatcherMt* dispatcher);
-
 		// Note: It's possible to exceed this with complex outfits, which is why we cap it.
 		// We don't want to stress a simulation island too much!
 		static const int MaxCollisionCount = 256;
@@ -124,7 +97,9 @@ namespace hdt
 				return c;
 			}
 
-			void doMerge(SkinnedMeshShape* shape0, SkinnedMeshShape* shape1, CollisionResult* collisions, int count);
+			template <class T0, class T1>
+			void doMerge(T0* shape0, T1* shape1, CollisionResult* collisions, int count);
+
 			void apply(SkinnedMeshBody* body0, SkinnedMeshBody* body1, CollisionDispatcher* dispatcher);
 
 			int mergeStride;

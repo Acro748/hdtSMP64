@@ -29,8 +29,6 @@ namespace hdt
 		auto collisionConfiguration = new btDefaultCollisionConfiguration;
 		auto collisionDispatcher = new CollisionDispatcher(collisionConfiguration);
 
-		SkinnedMeshAlgorithm::registerAlgorithm(collisionDispatcher);
-
 		m_dispatcher1 = collisionDispatcher;
 		m_broadphasePairCache = new btDbvtBroadphase();
 	}

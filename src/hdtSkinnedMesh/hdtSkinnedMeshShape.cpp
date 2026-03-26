@@ -54,15 +54,23 @@ namespace hdt
 
 	void PerVertexShape::internalUpdate()
 	{
-		auto& vertices = m_owner->m_vpos;
+		const VertexPos* __restrict vertices = m_owner->m_vpos.data();
+		const Collider* __restrict colliders = m_colliders.data();
+		Aabb* __restrict aabbs = m_aabb.data();
+		const size_t size = m_colliders.size();
 
-		size_t size = m_colliders.size();
+		const __m128 marginFactor = _mm_set1_ps(m_shapeProp.margin);
+
 		for (size_t i = 0; i < size; ++i) {
-			auto c = &m_colliders[i];
-			auto p0 = vertices[c->vertex].m_data;
-			auto margin = _mm_set_ps1(p0.m128_f32[3] * m_shapeProp.margin);
-			m_aabb[i].m_min = p0 - margin;
-			m_aabb[i].m_max = p0 + margin;
+			__m128 p0 = vertices[colliders[i].vertex].m_data;
+
+			// Broadcast the W component and multiply by margin factor
+			__m128 bcast = _mm_shuffle_ps(p0, p0, _MM_SHUFFLE(3, 3, 3, 3));
+			__m128 margin = _mm_mul_ps(bcast, marginFactor);
+
+			// Force 16-byte aligned vector stores to prevent MSVC scalar assignment fallback
+			_mm_store_ps(reinterpret_cast<float*>(&aabbs[i].m_min), _mm_sub_ps(p0, margin));
+			_mm_store_ps(reinterpret_cast<float*>(&aabbs[i].m_max), _mm_add_ps(p0, margin));
 		}
 
 		m_tree.updateAabb();
@@ -103,6 +111,10 @@ namespace hdt
 	{
 	}
 
+	// Note: Don't waste your time trying to optimize this...
+	// 1: The compiler auto-vertorizes, unrolls, and broadcasts W already (Very sensitive to changes)
+	// 2: Memory wall is the main issue
+	// 3: AVX2 would just have overhead
 	void PerTriangleShape::internalUpdate()
 	{
 		auto& vertices = m_owner->m_vpos;
