@@ -29,7 +29,7 @@ namespace hdt
 
 		void readTransform(float timeStep)
 		{
-			for (int i = 0; i < m_systems.size(); ++i) m_systems[i]->readTransform(timeStep);
+			concurrency::parallel_for_each(m_systems.begin(), m_systems.end(), [=](const auto& system) { system->readTransform(timeStep); });
 		}
 
 		void writeTransform()
