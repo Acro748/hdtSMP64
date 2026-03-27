@@ -98,8 +98,8 @@ namespace hdt
 					SkyrimPhysicsWorld::get()->m_unclampedResets = reader.readBool();
 				} else if (reader.GetLocalName() == "unclampedResetAngle") {
 					SkyrimPhysicsWorld::get()->m_unclampedResetAngle = reader.readFloat();
-				} else if (reader.GetLocalName() == "percentageOfFrameTime") {
-					SkyrimPhysicsWorld::get()->m_percentageOfFrameTime = std::clamp(reader.readInt() * 10, 1, 1000);
+				} else if (reader.GetLocalName() == "budgetMs") {
+					SkyrimPhysicsWorld::get()->m_budgetMs = std::clamp(reader.readFloat(), 0.1f, 20.0f);
 				} else if (reader.GetLocalName() == "useRealTime") {
 					SkyrimPhysicsWorld::get()->m_useRealTime = reader.readBool();
 				} else if (reader.GetLocalName() == "minCullingDistance") {

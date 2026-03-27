@@ -70,7 +70,7 @@ namespace hdt
 
 		bool m_useRealTime = false;
 		int min_fps = 60;
-		int m_percentageOfFrameTime = 300;  // percentage of time per frame doing hdt. Profiler shows 30% is reasonable. Out of 1000.
+		float m_budgetMs = 3.5f;
 		float m_timeTick = 1 / 60.f;
 		int m_maxSubSteps = 4;
 		bool m_clampRotations = true;
