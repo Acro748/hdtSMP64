@@ -139,20 +139,20 @@
 
       How many milliseconds per frame FSMP is allowed to spend on physics
       before it starts reducing the number of active skeletons.
-      
-      FSMP runs physics in parallel with the game. If physics finishes 
+
+      FSMP runs physics in parallel with the game. If physics finishes
       before the game needs the results, it's essentially free. This budget
-      controls the max time FSMP will wait for physics to finish if it 
+      controls the max time FSMP will wait for physics to finish if it
       doesn't complete in time.
-      
+
       Lower = less fps impact, fewer active skeletons.
       Higher = more fps impact, more active skeletons.
-      
-      For reference, at 60fps a full frame is ~16.6ms. A budget of 2-3ms 
-      is conservative, 5ms is generous. Test in a busy area like Whiterun 
-      with ~10 skeleton NPCs and check the verbose log (level 4) to see 
+
+      For reference, at 60fps a full frame is ~16.6ms. A budget of 2-3ms
+      is conservative, 5ms is generous. Test in a busy area like Whiterun
+      with ~10 skeleton NPCs and check the verbose log (level 4) to see
       how your setup performs.
-      
+
       Default: 3.5
     -->
 	  <budgetMs>3.5</budgetMs>
