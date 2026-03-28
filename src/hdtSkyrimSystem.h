@@ -25,6 +25,8 @@ namespace hdt
 		SkyrimSystem(RE::NiNode* skeleton);
 		~SkyrimSystem() override = default;
 
+		float processSkeletonRoot(float timeStep);
+
 		SkinnedMeshBone* findBone(const RE::BSFixedString& name);
 		SkinnedMeshBody* findBody(const RE::BSFixedString& name);
 		int findBoneIdx(const RE::BSFixedString& name);

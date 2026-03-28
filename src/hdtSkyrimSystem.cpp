@@ -80,7 +80,7 @@ namespace hdt
 		m_oldRoot = m_skeleton;
 	}
 
-	void SkyrimSystem::readTransform(float timeStep)
+	float SkyrimSystem::processSkeletonRoot(float timeStep)
 	{
 		auto newRoot = m_skeleton.get();
 		while (newRoot->parent) {
@@ -89,11 +89,6 @@ namespace hdt
 
 		if (m_oldRoot != newRoot) {
 			timeStep = RESET_PHYSICS;
-		}
-
-		if (!m_initialized) {
-			timeStep = RESET_PHYSICS;
-			m_initialized = true;
 		}
 
 		if (timeStep <= RESET_PHYSICS) {
@@ -146,8 +141,18 @@ namespace hdt
 			}
 		}
 
-		SkinnedMeshSystem::readTransform(timeStep);
 		m_oldRoot = hdt::make_nismart(newRoot);
+		return timeStep;
+	}
+
+	void SkyrimSystem::readTransform(float timeStep)
+	{
+		if (!m_initialized) {
+			timeStep = RESET_PHYSICS;
+			m_initialized = true;
+		}
+
+		SkinnedMeshSystem::readTransform(timeStep);
 	}
 
 	void SkyrimSystem::writeTransform()

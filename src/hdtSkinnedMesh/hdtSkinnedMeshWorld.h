@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hdtSkinnedMeshSystem.h"
+#include "hdtSkyrimSystem.h"
 #include <BulletCollision/CollisionDispatch/btSimulationIslandManager.h>
 #include <BulletDynamics/Dynamics/btDiscreteDynamicsWorldMt.h>
 
@@ -22,6 +23,10 @@ namespace hdt
 		const btVector3& getWind() const { return m_windSpeed; }
 
 	protected:
+		// Contains grouped systems that share the same actor
+		std::vector<SkyrimSystem*> m_sorted;
+		std::vector<float> m_timeSteps;
+
 		void resetTransformsToOriginal()
 		{
 			for (int i = 0; i < m_systems.size(); ++i) m_systems[i]->resetTransformsToOriginal();
@@ -29,7 +34,41 @@ namespace hdt
 
 		void readTransform(float timeStep)
 		{
-			concurrency::parallel_for_each(m_systems.begin(), m_systems.end(), [=](const auto& system) { system->readTransform(timeStep); });
+			const size_t n = m_systems.size();
+			if (n == 0)
+				return;
+
+			m_sorted.resize(n);
+			for (size_t i = 0; i < n; ++i)
+				m_sorted[i] = static_cast<SkyrimSystem*>(m_systems[i].get());
+
+			std::ranges::sort(m_sorted, std::less<>{}, [](const SkyrimSystem* sys) {
+				return sys->m_skeleton.get();
+			});
+
+			m_timeSteps.resize(n);
+
+			// Loop over the systems to find all the ones connected to one body, and only call processSkeletonRoot once
+			size_t i = 0;
+			while (i < n) {
+				SkyrimSystem* first = m_sorted[i];
+				float ts = first->processSkeletonRoot(timeStep);
+				void* key = first->m_skeleton.get();
+				m_timeSteps[i] = ts;
+
+				for (size_t j = i + 1; j < n && m_sorted[j]->m_skeleton.get() == key; ++j) {
+					m_sorted[j]->m_lastRootRotation = first->m_lastRootRotation;
+					m_sorted[j]->m_oldRoot = first->m_oldRoot;
+					m_timeSteps[j] = ts;
+					i = j;
+				}
+				++i;
+			}
+
+			concurrency::parallel_for(size_t{ 0 }, n,
+				[this](size_t i) {
+					m_sorted[i]->readTransform(m_timeSteps[i]);
+				});
 		}
 
 		void writeTransform()
