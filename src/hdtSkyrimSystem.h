@@ -25,14 +25,11 @@ namespace hdt
 		SkyrimSystem(RE::NiNode* skeleton);
 		~SkyrimSystem() override = default;
 
-		float processSkeletonRoot(float timeStep);
-
 		SkinnedMeshBone* findBone(const RE::BSFixedString& name);
 		SkinnedMeshBody* findBody(const RE::BSFixedString& name);
 		int findBoneIdx(const RE::BSFixedString& name);
 
-		void readTransform(float timeStep) override;
-		void writeTransform() override;
+		float prepareForRead(float timeStep) override;
 
 		const std::vector<RE::BSTSmartPointer<SkinnedMeshBody>>& meshes() const { return m_meshes; }
 

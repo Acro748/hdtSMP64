@@ -80,7 +80,7 @@ namespace hdt
 		m_oldRoot = m_skeleton;
 	}
 
-	float SkyrimSystem::processSkeletonRoot(float timeStep)
+	float SkyrimSystem::prepareForRead(float timeStep)
 	{
 		auto newRoot = m_skeleton.get();
 		while (newRoot->parent) {
@@ -89,6 +89,11 @@ namespace hdt
 
 		if (m_oldRoot != newRoot) {
 			timeStep = RESET_PHYSICS;
+		}
+
+		if (!m_initialized) {
+			timeStep = RESET_PHYSICS;
+			m_initialized = true;
 		}
 
 		if (timeStep <= RESET_PHYSICS) {
@@ -102,7 +107,6 @@ namespace hdt
 				timeStep = RESET_PHYSICS;
 				updateTransformUpDown(m_skeleton.get(), true);
 				m_lastRootRotation = convertNi(m_skeleton->world.rotate);
-				SkyrimPhysicsWorld::get()->m_resetPc -= 1;
 			} else if (!RE::PlayerCamera::GetSingleton()->GetRuntimeData2().isWeapSheathed || RE::PlayerCamera::GetSingleton()->currentState->id == RE::CameraState::kFirstPerson)  // isWeaponSheathed or potentially isCameraFree || cameraState is first person
 			{
 				m_lastRootRotation = convertNi(m_skeleton->world.rotate);
@@ -143,21 +147,6 @@ namespace hdt
 
 		m_oldRoot = hdt::make_nismart(newRoot);
 		return timeStep;
-	}
-
-	void SkyrimSystem::readTransform(float timeStep)
-	{
-		if (!m_initialized) {
-			timeStep = RESET_PHYSICS;
-			m_initialized = true;
-		}
-
-		SkinnedMeshSystem::readTransform(timeStep);
-	}
-
-	void SkyrimSystem::writeTransform()
-	{
-		SkinnedMeshSystem::writeTransform();
 	}
 
 	SkyrimSystemCreator::SkyrimSystemCreator()

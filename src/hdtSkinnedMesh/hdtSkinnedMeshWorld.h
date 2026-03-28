@@ -23,8 +23,6 @@ namespace hdt
 		const btVector3& getWind() const { return m_windSpeed; }
 
 	protected:
-		// Contains grouped systems that share the same actor
-		std::vector<SkyrimSystem*> m_sorted;
 		std::vector<float> m_timeSteps;
 
 		void resetTransformsToOriginal()
@@ -38,37 +36,15 @@ namespace hdt
 			if (n == 0)
 				return;
 
-			m_sorted.resize(n);
-			for (size_t i = 0; i < n; ++i)
-				m_sorted[i] = static_cast<SkyrimSystem*>(m_systems[i].get());
-
-			std::ranges::sort(m_sorted, std::less<>{}, [](const SkyrimSystem* sys) {
-				return sys->m_skeleton.get();
-			});
-
 			m_timeSteps.resize(n);
 
-			// Loop over the systems to find all the ones connected to one body, and only call processSkeletonRoot once
-			size_t i = 0;
-			while (i < n) {
-				SkyrimSystem* first = m_sorted[i];
-				float ts = first->processSkeletonRoot(timeStep);
-				void* key = first->m_skeleton.get();
-				m_timeSteps[i] = ts;
+			// processSkeletonRoot must be ran synchronously to avoid race issues
+			for (size_t i = 0; i < n; ++i)
+				m_timeSteps[i] = m_systems[i]->prepareForRead(timeStep);
 
-				for (size_t j = i + 1; j < n && m_sorted[j]->m_skeleton.get() == key; ++j) {
-					m_sorted[j]->m_lastRootRotation = first->m_lastRootRotation;
-					m_sorted[j]->m_oldRoot = first->m_oldRoot;
-					m_timeSteps[j] = ts;
-					i = j;
-				}
-				++i;
-			}
-
-			concurrency::parallel_for(size_t{ 0 }, n,
-				[this](size_t i) {
-					m_sorted[i]->readTransform(m_timeSteps[i]);
-				});
+			concurrency::parallel_for(size_t{ 0 }, n, [this](size_t i) {
+				m_systems[i]->readTransform(m_timeSteps[i]);
+			});
 		}
 
 		void writeTransform()

@@ -84,7 +84,7 @@ namespace hdt
 			addConstraint(system->m_constraints[i]->m_constraint, true);
 
 		// -10 allows RESET_PHYSICS down the calls. But equality with a float?...
-		system->readTransform(RESET_PHYSICS);
+		system->readTransform(system->prepareForRead(RESET_PHYSICS));
 
 		system->m_world = this;
 	}
