@@ -32,6 +32,28 @@ namespace Hooks
 			//
 			ApplyBoneLimitFix();
 
+			// Todo: Get the VR offset(s)/ID
+			if (!REL::Module::IsVR()) {
+				// Skyrim patch: This fixes facial morphs from getting broken by some SMP meshes (Commonly hairs, but also bodies)
+				// [BSFaceGenNiNode::sub, the producer that enqueues faces for morph updates]
+				// children[0] validation bails if the first child isn't a valid facegen BSDynamicTriShape
+				// Patch: redirect the failure JZ to skip the child dependent section
+				// and fall through to node checks instead of early bailing
+				//
+				// 1404332c0: 0F 84 8F 00 00 00  JZ 0x8F  140433355 (early bail)
+				// to: 0F 84 22 00 00 00  JZ 0x22   1404332e8 (actual node checks)
+
+				REL::Relocation<std::uintptr_t> func{ RELOCATION_ID(26417, 26998) };
+
+				logger::debug("Applying FaceMorphProducer patch!");
+
+				if (REL::Module::IsAE()) {
+					REL::safe_write(func.address() + 0x202, std::uint8_t{ 0x22 });
+				} else {
+					REL::safe_write(func.address() + 0x201, std::uint8_t{ 0x09 });
+				}
+			}
+
 			//
 			logger::debug("...success");
 		}
