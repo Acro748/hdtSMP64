@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hdtSkinnedMeshSystem.h"
+#include "hdtSkyrimSystem.h"
 #include <BulletCollision/CollisionDispatch/btSimulationIslandManager.h>
 #include <BulletDynamics/Dynamics/btDiscreteDynamicsWorldMt.h>
 
@@ -22,6 +23,8 @@ namespace hdt
 		const btVector3& getWind() const { return m_windSpeed; }
 
 	protected:
+		std::vector<float> m_timeSteps;
+
 		void resetTransformsToOriginal()
 		{
 			for (int i = 0; i < m_systems.size(); ++i) m_systems[i]->resetTransformsToOriginal();
@@ -29,7 +32,19 @@ namespace hdt
 
 		void readTransform(float timeStep)
 		{
-			for (int i = 0; i < m_systems.size(); ++i) m_systems[i]->readTransform(timeStep);
+			const size_t n = m_systems.size();
+			if (n == 0)
+				return;
+
+			m_timeSteps.resize(n);
+
+			// processSkeletonRoot must be ran synchronously to avoid race issues
+			for (size_t i = 0; i < n; ++i)
+				m_timeSteps[i] = m_systems[i]->prepareForRead(timeStep);
+
+			concurrency::parallel_for(size_t{ 0 }, n, [this](size_t i) {
+				m_systems[i]->readTransform(m_timeSteps[i]);
+			});
 		}
 
 		void writeTransform()

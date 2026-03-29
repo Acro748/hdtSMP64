@@ -114,6 +114,8 @@ namespace hdt
 
 				readTransform(remainingTimeStep);
 
+				m_resetPc -= m_resetPc > 0;
+
 				m_tasks.run([this, interval, tick, remainingTimeStep] { doUpdate2ndStep(interval, tick, remainingTimeStep); });
 			}
 		}
@@ -308,7 +310,7 @@ namespace hdt
 	{
 		std::lock_guard<decltype(m_lock)> l(m_lock);
 		for (auto& i : m_systems)
-			i->readTransform(RESET_PHYSICS);
+			i->readTransform(i->prepareForRead(RESET_PHYSICS));
 	}
 
 	RE::BSEventNotifyControl SkyrimPhysicsWorld::ProcessEvent(const Events::FrameEvent* e, RE::BSTEventSource<Events::FrameEvent>*)
