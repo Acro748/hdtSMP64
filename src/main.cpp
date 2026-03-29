@@ -285,9 +285,14 @@ bool SMPDebug_Execute(
 		return false;
 	}
 
+	logger::debug("SMPCommand: {} {}"sv, buffer, buffer2);
+
 	if (_strnicmp(buffer, "reset", MAX_PATH) == 0) {
+		logger::debug("smp reset: reloading config and resetting physics world"sv);
 		RE::ConsoleLog::GetSingleton()->Print("running full smp reset");
 		hdt::loadConfig();
+		hdt::logConfig();
+
 		hdt::SkyrimPhysicsWorld::get()->resetTransformsToOriginal();
 		const RE::MenuOpenCloseEvent e{ "", false };
 		hdt::ActorManager::instance()->ProcessEvent(&e, nullptr);
@@ -500,7 +505,6 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 
 	//
 	hdt::loadConfig();
-
 	//
 	InitializeLog();
 
@@ -511,6 +515,8 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	} else {
 		logger::info("{} v{}-{}"sv, Plugin::NAME, Plugin::VERSION.string(), Plugin::BUILD_INFO);
 	}
+
+	hdt::logConfig();
 
 	const auto messaging = SKSE::GetMessagingInterface();
 	if (!messaging->RegisterListener("SKSE", MessageHandler)) {
