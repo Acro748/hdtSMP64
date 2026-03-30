@@ -56,9 +56,29 @@ void hdt::util::transferCurrentPosesBetweenSystems(hdt::SkyrimSystem* src, hdt::
 			}
 
 			if (_match_name(b1->m_name, b2->m_name)) {
-				b2->m_rig.setWorldTransform(b1->m_rig.getWorldTransform());
-				b2->m_rig.setAngularVelocity(b1->m_rig.getAngularVelocity());
-				b2->m_rig.setLinearVelocity(b1->m_rig.getLinearVelocity());
+				btTransform nodeWorldTrans = b1->m_rig.getWorldTransform() * b1->m_rigToLocal;
+				btTransform newRigTrans = nodeWorldTrans * b2->m_localToRig;
+
+				b2->m_rig.setWorldTransform(newRigTrans);
+				b2->m_rig.setInterpolationWorldTransform(newRigTrans);
+
+				b2->m_currentTransform = b1->m_currentTransform;
+				b2->m_origToSkeletonTransform = b1->m_origToSkeletonTransform;
+				b2->m_origTransform = b1->m_origTransform;
+				btVector3 oldCoM = b1->m_rig.getWorldTransform().getOrigin();
+				btVector3 newCoM = newRigTrans.getOrigin();
+				btVector3 comShift = newCoM - oldCoM;
+
+				btVector3 angVel = b1->m_rig.getAngularVelocity();
+
+				btVector3 linVel = b1->m_rig.getLinearVelocity() + angVel.cross(comShift);
+
+				constexpr float transitionDamping = 0.8f;
+				b2->m_rig.setLinearVelocity(linVel * transitionDamping);
+				b2->m_rig.setAngularVelocity(angVel * transitionDamping);
+				b2->m_rig.setInterpolationLinearVelocity(linVel * transitionDamping);
+				b2->m_rig.setInterpolationAngularVelocity(angVel * transitionDamping);
+
 				break;
 			}
 		}
