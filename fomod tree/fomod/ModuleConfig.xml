@@ -49,18 +49,6 @@ Current active developers at the time of this writing, ordered by date of involv
 			<optionalFileGroups order="Explicit">
 				<group name="AVX" type="SelectExactlyOne">
 					<plugins order="Explicit">
-						<plugin name="No AVX">
-							<description>If your CPU doesn't support the AVX instruction set, select this.
-
-Q: What is AVX?
-A: Advanced_Vector_Extensions are extensions to the instruction sets for microprocessors from AMD and Intel. All Intel CPUs starting with Sandy Bridge in 2011 and AMD processors on their "Bulldozer" architecture and beyond offer this set of instructions.</description>
-							<conditionFlags>
-								<flag name="NOAVX">On</flag>
-							</conditionFlags>
-							<typeDescriptor>
-								<type name="Optional" />
-							</typeDescriptor>
-						</plugin>
 						<plugin name="AVX (recommended)">
 							<description>If your CPU supports the AVX instruction set, select this.
 Performance improvements over no AVX.</description>
@@ -105,6 +93,18 @@ Should bring performance improvements over AVX2 and AVX, but brings some synchro
 Test and choose for yourself :)</description>
 							<conditionFlags>
 								<flag name="AVX512">On</flag>
+							</conditionFlags>
+							<typeDescriptor>
+								<type name="Optional" />
+							</typeDescriptor>
+						</plugin>
+						<plugin name="No AVX">
+							<description>If your CPU doesn't support the AVX instruction set, select this.
+
+Q: What is AVX?
+A: Advanced_Vector_Extensions are extensions to the instruction sets for microprocessors from AMD and Intel. All Intel CPUs starting with Sandy Bridge in 2011 and AMD processors on their "Bulldozer" architecture and beyond offer this set of instructions.</description>
+							<conditionFlags>
+								<flag name="NOAVX">On</flag>
 							</conditionFlags>
 							<typeDescriptor>
 								<type name="Optional" />
