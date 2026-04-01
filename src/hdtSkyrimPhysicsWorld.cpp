@@ -359,11 +359,14 @@ namespace hdt
 	RE::BSEventNotifyControl SkyrimPhysicsWorld::ProcessEvent(const Events::FrameSyncEvent*, RE::BSTEventSource<Events::FrameSyncEvent>*)
 	{
 		if (m_doMetrics) {
-			LARGE_INTEGER ticks;
+			LARGE_INTEGER ticks, freq;
 			QueryPerformanceCounter(&ticks);
-			int64_t startTime = ticks.QuadPart;
+			int64_t t0 = ticks.QuadPart;
 
 			m_tasks.wait();
+
+			QueryPerformanceCounter(&ticks);
+			int64_t t1 = ticks.QuadPart;
 
 			{
 				std::lock_guard<decltype(m_lock)> l(m_lock);
@@ -371,18 +374,45 @@ namespace hdt
 			}
 
 			QueryPerformanceCounter(&ticks);
-			int64_t endTime = ticks.QuadPart;
-			QueryPerformanceFrequency(&ticks);
-			// float ticks_per_ms = static_cast<float>(ticks.QuadPart) * 1e-3;
-			m_SMPProcessingTimeInMainLoop += (endTime - startTime) / static_cast<float>(ticks.QuadPart) * 1e3f;
-			m_averageSMPProcessingTimeInMainLoop = (m_averageSMPProcessingTimeInMainLoop * (m_sampleSize - 1) + m_SMPProcessingTimeInMainLoop) / m_sampleSize;
-			float totalSMPTime = m_averageSMPProcessingTimeInMainLoop + m_2ndStepAverageProcessingTime;
+			int64_t t2 = ticks.QuadPart;
+			QueryPerformanceFrequency(&freq);
+			float f = static_cast<float>(freq.QuadPart);
+
+			float instWaitTime = (t1 - t0) / f * 1000.0f;
+			float instWriteTime = (t2 - t1) / f * 1000.0f;
+			float instSetupTime = m_SMPProcessingTimeInMainLoop;
+
+			float instFpsImpact = instSetupTime + instWaitTime + instWriteTime;
+
+			m_averageSMPProcessingTimeInMainLoop = (m_averageSMPProcessingTimeInMainLoop * (m_sampleSize - 1) + instFpsImpact) / m_sampleSize;
+
+			// Smooth the individual components for logging so the math adds up perfectly visually
+			static float avgSetupTime = 0.0f;
+			static float avgWaitTime = 0.0f;
+			static float avgWriteTime = 0.0f;
+
+			avgSetupTime = (avgSetupTime * (m_sampleSize - 1) + instSetupTime) / m_sampleSize;
+			avgWaitTime = (avgWaitTime * (m_sampleSize - 1) + instWaitTime) / m_sampleSize;
+			avgWriteTime = (avgWriteTime * (m_sampleSize - 1) + instWriteTime) / m_sampleSize;
+
+			// The background thread's math time (this is already smoothed in doUpdate2ndStep)
+			float avgBackgroundCalcTime = m_2ndStepAverageProcessingTime;
+
+			// How much of that background math was successfully hidden?
+			float avgHiddenTime = std::max(0.0f, avgBackgroundCalcTime - avgWaitTime);
+
+			float avgTotalCpuWork = avgSetupTime + avgBackgroundCalcTime + avgWriteTime;
+
 			logger::info(
-				"smp cost in main loop (msecs): {:.2f}, cost outside main loop: {:.2f}, percentage outside vs total: {:.2f}",
-				m_averageSMPProcessingTimeInMainLoop, m_2ndStepAverageProcessingTime, 100. * m_2ndStepAverageProcessingTime / totalSMPTime);
+				"[SMP Metrics] Avg Frame-time Impact: {:.2f}ms (Setup: {:.2f}, Wait: {:.2f}, Apply: {:.2f}) | Avg Hidden Time: {:.2f}ms | Avg Total CPU Work: {:.2f}ms",
+				m_averageSMPProcessingTimeInMainLoop,  // This will exactly equal Setup + Wait + Apply
+				avgSetupTime,
+				avgWaitTime,
+				avgWriteTime,
+				avgHiddenTime,
+				avgTotalCpuWork);
 		} else {
 			m_tasks.wait();
-
 			{
 				std::lock_guard<decltype(m_lock)> l(m_lock);
 				writeTransform();

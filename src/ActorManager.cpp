@@ -513,25 +513,31 @@ namespace hdt
 
 		if (world->m_doMetrics) {
 			const auto averageProcessingTimeInMainLoop = world->m_averageSMPProcessingTimeInMainLoop;
-			// 30% of processing time is in hdt per profiling;
-			// Setting it higher provides more time for hdt processing and can activate more skeletons.
-			const auto target_time = world->m_timeTick * world->m_percentageOfFrameTime;
+
+			const auto maxBudgetTime = world->m_budgetMs;
 			const auto averageTimePerSkeletonInMainLoop = activeSkeletons > 0 ? averageProcessingTimeInMainLoop / activeSkeletons : 0.f;
 
 			logger::trace(
-				"msecs/activeSkeleton {:.2f} activeSkeletons/maxActive/total {}/{}/{} processTimeInMainLoop/targetTime {:.2f}/{:.2f}",
+				"msecs/activeSkeleton {:.2f} activeSkeletons/maxActive/total {}/{}/{} processTimeInMainLoop/budgetTime {:.2f}/{:.2f}",
 				averageTimePerSkeletonInMainLoop,
 				activeSkeletons,
 				maxActiveSkeletons,
 				m_skeletons.size(),
 				averageProcessingTimeInMainLoop,
-				target_time);
+				maxBudgetTime);
 
 			if (m_autoAdjustMaxSkeletons) {
-				maxActiveSkeletons += target_time > averageProcessingTimeInMainLoop ? 2 : -2;
+				// Deadzones to prevent constantly switching back and fourth
+				if (averageProcessingTimeInMainLoop > maxBudgetTime) {
+					maxActiveSkeletons -= 2;
+				} else if (averageProcessingTimeInMainLoop < maxBudgetTime * 0.9f) {  // under 90% of budget
+					maxActiveSkeletons += 2;
+				}
+
 				// clamp the value to the m_maxActiveSkeletons value
 				maxActiveSkeletons = std::clamp(maxActiveSkeletons, 1, m_maxActiveSkeletons);
 				frameCount = 1;
+
 			} else if (maxActiveSkeletons != m_maxActiveSkeletons)
 				maxActiveSkeletons = m_maxActiveSkeletons;
 		}
