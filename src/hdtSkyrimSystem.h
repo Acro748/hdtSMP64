@@ -11,7 +11,7 @@
 
 namespace hdt
 {
-	class PerVertexShape; 
+	class PerVertexShape;
 	class SkyrimSystem : public SkinnedMeshSystem
 	{
 		friend class SkyrimSystemCreator;
