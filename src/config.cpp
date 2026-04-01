@@ -175,36 +175,41 @@ namespace hdt
 		// Restore original locale
 		std::setlocale(LC_NUMERIC, saved_locale);
 	}
+
 	void logConfig()
 	{
-		logger::debug("config: solver.numIterations = {}", SkyrimPhysicsWorld::get()->getSolverInfo().m_numIterations);
-		logger::debug("config: solver.erp = {}", SkyrimPhysicsWorld::get()->getSolverInfo().m_erp);
-		logger::debug("config: solver.min-fps = {}", SkyrimPhysicsWorld::get()->min_fps);
-		logger::debug("config: solver.maxSubSteps = {}", SkyrimPhysicsWorld::get()->m_maxSubSteps);
+		auto* w = SkyrimPhysicsWorld::get();
+		auto* a = ActorManager::instance();
 
-		logger::debug("config: wind.windStrength = {}", SkyrimPhysicsWorld::get()->m_windStrength);
-		logger::debug("config: wind.enabled = {}", SkyrimPhysicsWorld::get()->m_enableWind);
-		logger::debug("config: wind.distanceForNoWind = {}", SkyrimPhysicsWorld::get()->m_distanceForNoWind);
-		logger::debug("config: wind.distanceForMaxWind = {}", SkyrimPhysicsWorld::get()->m_distanceForMaxWind);
+#define LOG(name, val) logger::debug("config: " name " = {}", val)
+		LOG("solver.numIterations", w->getSolverInfo().m_numIterations);
+		LOG("solver.erp", w->getSolverInfo().m_erp);
+		LOG("solver.min-fps", w->min_fps);
+		LOG("solver.maxSubSteps", w->m_maxSubSteps);
 
-		const auto configuredLogLevel = 5 - g_logLevel;
-		logger::debug("config: smp.logLevel = {}", configuredLogLevel);
+		LOG("wind.windStrength", w->m_windStrength);
+		LOG("wind.enabled", w->m_enableWind);
+		LOG("wind.distanceForNoWind", w->m_distanceForNoWind);
+		LOG("wind.distanceForMaxWind", w->m_distanceForMaxWind);
 
-		for (auto& item : Hooks::BipedAnimHooks::BackupNodes) {
+		LOG("smp.logLevel", 5 - g_logLevel);
+
+		for (auto& item : Hooks::BipedAnimHooks::BackupNodes)
 			logger::debug("config: smp.backupNodeByName += {}", item);
-		}
-		logger::debug("config: smp.enableNPCFaceParts = {}", ActorManager::instance()->m_skinNPCFaceParts);
-		logger::debug("config: smp.disableSMPHairWhenWigEquipped = {}", ActorManager::instance()->m_disableSMPHairWhenWigEquipped);
-		logger::debug("config: smp.clampRotations = {}", SkyrimPhysicsWorld::get()->m_clampRotations);
-		logger::debug("config: smp.rotationSpeedLimit = {}", SkyrimPhysicsWorld::get()->m_rotationSpeedLimit);
-		logger::debug("config: smp.unclampedResets = {}", SkyrimPhysicsWorld::get()->m_unclampedResets);
-		logger::debug("config: smp.unclampedResetAngle = {}", SkyrimPhysicsWorld::get()->m_unclampedResetAngle);
-		logger::debug("config: smp.percentageOfFrameTime = {}", SkyrimPhysicsWorld::get()->m_percentageOfFrameTime);
-		logger::debug("config: smp.useRealTime = {}", SkyrimPhysicsWorld::get()->m_useRealTime);
-		logger::debug("config: smp.minCullingDistance = {}", ActorManager::instance()->m_minCullingDistance);
-		logger::debug("config: smp.maximumActiveSkeletons = {}", ActorManager::instance()->m_maxActiveSkeletons);
-		logger::debug("config: smp.autoAdjustMaxSkeletons = {}", ActorManager::instance()->m_autoAdjustMaxSkeletons);
-		logger::debug("config: smp.sampleSize = {}", SkyrimPhysicsWorld::get()->m_sampleSize);
-		logger::debug("config: smp.disable1stPersonViewPhysics = {}", ActorManager::instance()->m_disable1stPersonViewPhysics);
+
+		LOG("smp.enableNPCFaceParts", a->m_skinNPCFaceParts);
+		LOG("smp.disableSMPHairWhenWigEquipped", a->m_disableSMPHairWhenWigEquipped);
+		LOG("smp.clampRotations", w->m_clampRotations);
+		LOG("smp.rotationSpeedLimit", w->m_rotationSpeedLimit);
+		LOG("smp.unclampedResets", w->m_unclampedResets);
+		LOG("smp.unclampedResetAngle", w->m_unclampedResetAngle);
+		LOG("smp.budgetMS", w->m_budgetMs);
+		LOG("smp.useRealTime", w->m_useRealTime);
+		LOG("smp.minCullingDistance", a->m_minCullingDistance);
+		LOG("smp.maximumActiveSkeletons", a->m_maxActiveSkeletons);
+		LOG("smp.autoAdjustMaxSkeletons", a->m_autoAdjustMaxSkeletons);
+		LOG("smp.sampleSize", w->m_sampleSize);
+		LOG("smp.disable1stPersonViewPhysics", a->m_disable1stPersonViewPhysics);
+#undef LOG
 	}
 }
