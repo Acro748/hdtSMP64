@@ -113,15 +113,14 @@ namespace hdt
 		return _mm_cvtss_f32(_mm_andnot_ps(_mm_set_ss(-0.f), _mm_set_ss(rhs)));
 	}
 
-	// Todo: Do we even need the amp library?
 	template <class T>
-	T min(const T& a, const T& b) restrict(cpu, amp)
+	T min(const T& a, const T& b)
 	{
 		return a < b ? a : b;
 	}
 
 	template <class T>
-	T max(const T& a, const T& b) restrict(cpu, amp)
+	T max(const T& a, const T& b)
 	{
 		return a < b ? b : a;
 	}

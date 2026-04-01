@@ -12,12 +12,7 @@
 #endif
 #pragma warning(pop)
 
-//
 #include <algorithm>
-#include <amp.h>
-#include <amp_graphics.h>
-#include <amp_math.h>
-#include <amp_short_vectors.h>
 #include <atomic>
 #include <cinttypes>
 #include <clocale>

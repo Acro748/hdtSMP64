@@ -402,16 +402,15 @@ namespace
 		*path /= fmt::format("{}.log"sv, Plugin::NAME);
 		auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
 #endif
-		//
+
 		const auto level = static_cast<spdlog::level::level_enum>(hdt::g_logLevel);
 
-		//
 		auto log = std::make_shared<spdlog::logger>("global log"s, std::move(sink));
 		log->set_level(level);
 		log->flush_on(level);
 
 		spdlog::set_default_logger(std::move(log));
-		spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
+		spdlog::set_pattern("[%H:%M:%S.%e] [%L] %v"s);
 	}
 }
 
@@ -503,17 +502,16 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Load(const SKSE::LoadInterface* a_s
 	}
 #endif
 
-	//
-	hdt::loadConfig();
-	//
-	InitializeLog();
-
 	SKSE::Init(a_skse);
 
+	hdt::loadConfig();
+
+	InitializeLog();
+
 	if constexpr (Plugin::BUILD_INFO.empty()) {
-		logger::info("{} v{} ({})"sv, Plugin::NAME, Plugin::VERSION.string(), Plugin::AVX_VARIANT);
+		logger::critical("{} v{} ({})"sv, Plugin::NAME, Plugin::VERSION.string(), Plugin::AVX_VARIANT);
 	} else {
-		logger::info("{} v{}-{} ({})"sv, Plugin::NAME, Plugin::VERSION.string(), Plugin::BUILD_INFO, Plugin::AVX_VARIANT);
+		logger::critical("{} v{}-{} ({})"sv, Plugin::NAME, Plugin::VERSION.string(), Plugin::BUILD_INFO, Plugin::AVX_VARIANT);
 	}
 
 	hdt::logConfig();
