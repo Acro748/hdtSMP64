@@ -86,7 +86,7 @@ namespace hdt
 				if (m_owner->m_vertices[i].m_weight[j] > FLT_EPSILON)
 					keys.push_back(m_owner->m_vertices[i].getBoneIdx(j));
 			}
-			m_tree.insertCollider(keys, Collider(i));
+			m_tree.insertCollider(keys.data(), keys.size(), Collider(i));
 		}
 	}
 
@@ -197,30 +197,54 @@ namespace hdt
 		assert(b < m_owner->m_vertices.size());
 		assert(c < m_owner->m_vertices.size());
 		Collider collider(a, b, c);
-		std::vector<U32> keys;
-		std::vector<float> w;
-		for (int i = 0; i < 12; ++i) {
-			auto weight = getColliderBoneWeight(&collider, i);
-			if (weight < FLT_EPSILON)
-				continue;
-			auto bone = getColliderBoneIndex(&collider, i);
-			auto iter = std::find(keys.begin(), keys.end(), (U32)bone);
-			if (iter != keys.end())
-				w[iter - keys.begin()] += weight;
-			else {
-				keys.push_back(bone);
-				w.push_back(weight);
+
+		// Stacklocal fixed arrays, max 12 unique bones (3 verts * 4 weights)
+		U32 keys[12];
+		float w[12];
+		int count = 0;
+
+		const auto& v0 = m_owner->m_vertices[a];
+		const auto& v1 = m_owner->m_vertices[b];
+		const auto& v2 = m_owner->m_vertices[c];
+		const Vertex* verts[3] = { &v0, &v1, &v2 };
+
+		for (int vi = 0; vi < 3; ++vi) {
+			for (int wi = 0; wi < 4; ++wi) {
+				float weight = verts[vi]->m_weight[wi];
+				if (weight < FLT_EPSILON)
+					continue;
+				U32 bone = verts[vi]->getBoneIdx(wi);
+
+				int found = -1;
+				for (int k = 0; k < count; ++k) {
+					if (keys[k] == bone) {
+						found = k;
+						break;
+					}
+				}
+				if (found >= 0) {
+					w[found] += weight;
+				} else {
+					keys[count] = bone;
+					w[count] = weight;
+					++count;
+				}
 			}
 		}
 
-		for (int i = 0; i < keys.size(); ++i)
-			for (int j = 1; j < keys.size(); ++j) {
-				if (w[j - 1] < w[j] || (w[j - 1] == w[j] && keys[j] < keys[j - 1])) {
-					std::swap(keys[j], keys[j - 1]);
-					std::swap(w[j], w[j - 1]);
-				}
+		for (int i = 1; i < count; ++i) {
+			float wTemp = w[i];
+			U32 kTemp = keys[i];
+			int j = i;
+			while (j > 0 && (w[j - 1] < wTemp || (w[j - 1] == wTemp && keys[j - 1] > kTemp))) {
+				w[j] = w[j - 1];
+				keys[j] = keys[j - 1];
+				--j;
 			}
+			w[j] = wTemp;
+			keys[j] = kTemp;
+		}
 
-		m_tree.insertCollider(keys, collider);
+		m_tree.insertCollider(keys, count, collider);
 	}
 }

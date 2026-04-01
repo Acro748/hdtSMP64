@@ -65,7 +65,7 @@ namespace hdt
 		vectorA16<Collider> colliders;
 		U32 key;
 
-		void insertCollider(const std::vector<U32>& keys, const Collider& c);
+		void insertCollider(const U32* keys, size_t keyCount, const Collider& c);
 		void exportColliders(vectorA16<Collider>& exportTo);
 		void remapColliders(Collider* start, Aabb* startAabb);
 
