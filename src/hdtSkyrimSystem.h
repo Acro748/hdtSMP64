@@ -11,6 +11,7 @@
 
 namespace hdt
 {
+	class PerVertexShape;
 	class SkyrimSystem : public SkinnedMeshSystem
 	{
 		friend class SkyrimSystemCreator;
@@ -52,6 +53,30 @@ namespace hdt
 		RE::BSTSmartPointer<SkyrimSystem> createOrUpdateSystem(RE::NiNode* skeleton, RE::NiAVObject* model, DefaultBBP::PhysicsFile_t* file, std::unordered_map<RE::BSFixedString, RE::BSFixedString>&& renameMap, SkyrimSystem* old_system);
 
 	protected:
+		// O(1) bone lookup index. These are just to speed up the hashmap more since BSStrings are pooled
+		struct PooledStringHash
+		{
+			size_t operator()(const char* p) const noexcept { return reinterpret_cast<size_t>(p); }
+		};
+
+		struct PooledStringEqual
+		{
+			bool operator()(const char* a, const char* b) const noexcept { return a == b; }
+		};
+
+		std::unordered_map<const char*, SkyrimBone*, PooledStringHash, PooledStringEqual> m_boneIndex;
+
+		void indexBone(SkyrimBone* bone);
+		SkyrimBone* findBoneFromIndex(const RE::BSFixedString& name) const;
+
+		struct DeferredBuild
+		{
+			SkinnedMeshBody* body;
+			PerVertexShape* vertexShape;
+		};
+
+		std::vector<DeferredBuild> m_deferredBuilds;
+
 		struct BoneTemplate : public btRigidBody::btRigidBodyConstructionInfo
 		{
 			static btEmptyShape emptyShape[1];

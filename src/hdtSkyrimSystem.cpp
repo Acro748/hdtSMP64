@@ -5,38 +5,43 @@
 #include "XmlReader.h"
 #include "hdtSkyrimPhysicsWorld.h"
 
+// F16C isn't supported on super old processors. AVX2+ (AVX processors can have it, but not guaranteed)
+#if defined(__AVX2__) || defined(__AVX512F__)
+#	include <immintrin.h>
+#else
+// float32
+// Martin Kallman
+//
+// Fast half-precision to single-precision floating point conversion
+//  - Supports signed zero and denormals-as-zero (DAZ)
+//  - Does not support infinities or NaN
+//  - Few, partially pipelinable, non-branching instructions,
+//  - Core operations ~6 clock cycles on modern x86-64
+static void __float32(float* __restrict out, const uint16_t in)
+{
+	uint32_t t1;
+	uint32_t t2;
+	uint32_t t3;
+
+	t1 = in & 0x7fff;  // Non-sign bits
+	t2 = in & 0x8000;  // Sign bit
+	t3 = in & 0x7c00;  // Exponent
+
+	t1 <<= 13;  // Align mantissa on MSB
+	t2 <<= 16;  // Shift sign bit into position
+
+	t1 += 0x38000000;  // Adjust bias
+
+	t1 = (t3 == 0 ? 0 : t1);  // Denormals-as-zero
+
+	t1 |= t2;  // Re-insert sign bit
+
+	*((uint32_t*)out) = t1;
+};
+#endif
+
 namespace hdt
 {
-	// float32
-	// Martin Kallman
-	//
-	// Fast half-precision to single-precision floating point conversion
-	//  - Supports signed zero and denormals-as-zero (DAZ)
-	//  - Does not support infinities or NaN
-	//  - Few, partially pipelinable, non-branching instructions,
-	//  - Core operations ~6 clock cycles on modern x86-64
-	static void float32(float* __restrict out, const uint16_t in)
-	{
-		uint32_t t1;
-		uint32_t t2;
-		uint32_t t3;
-
-		t1 = in & 0x7fff;  // Non-sign bits
-		t2 = in & 0x8000;  // Sign bit
-		t3 = in & 0x7c00;  // Exponent
-
-		t1 <<= 13;  // Align mantissa on MSB
-		t2 <<= 16;  // Shift sign bit into position
-
-		t1 += 0x38000000;  // Adjust bias
-
-		t1 = (t3 == 0 ? 0 : t1);  // Denormals-as-zero
-
-		t1 |= t2;  // Re-insert sign bit
-
-		*((uint32_t*)out) = t1;
-	};
-
 	static constexpr float PI = 3.1415926535897932384626433832795f;
 
 	btEmptyShape SkyrimSystemCreator::BoneTemplate::emptyShape[1];
@@ -153,6 +158,17 @@ namespace hdt
 	{
 	}
 
+	void SkyrimSystemCreator::indexBone(SkyrimBone* bone)
+	{
+		m_boneIndex.emplace(bone->m_name.data(), bone);
+	}
+
+	SkyrimBone* SkyrimSystemCreator::findBoneFromIndex(const RE::BSFixedString& name) const
+	{
+		auto it = m_boneIndex.find(name.data());
+		return it != m_boneIndex.end() ? it->second : nullptr;
+	}
+
 	RE::NiNode* SkyrimSystemCreator::findObjectByName(const RE::BSFixedString& name)
 	{
 		// TODO check it's not a lurker skeleton
@@ -161,7 +177,7 @@ namespace hdt
 
 	SkyrimBone* SkyrimSystemCreator::getOrCreateBone(const RE::BSFixedString& name)
 	{
-		auto bone = static_cast<SkyrimBone*>(m_mesh->findBone(getRenamedBone(name)));
+		auto bone = findBoneFromIndex(getRenamedBone(name));
 		if (bone) {
 			return bone;
 		}
@@ -210,6 +226,7 @@ namespace hdt
 		auto meshNameMap = file->second;
 
 		m_mesh = RE::make_smart<SkyrimSystem>(skeleton);
+		m_boneIndex.clear();
 
 		// Store original locale
 		char saved_locale[32];
@@ -325,6 +342,24 @@ namespace hdt
 			logger::error("xml parse error - {}", err.c_str());
 			return nullptr;
 		}
+
+		if (m_deferredBuilds.size() > 2) {
+			concurrency::parallel_for_each(
+				m_deferredBuilds.begin(), m_deferredBuilds.end(),
+				[](const DeferredBuild& db) {
+					if (db.vertexShape)
+						db.vertexShape->autoGen();
+					db.body->finishBuild();
+				});
+		} else if (!m_deferredBuilds.empty()) {
+			for (const auto& db : m_deferredBuilds) {
+				if (db.vertexShape)
+					db.vertexShape->autoGen();
+				db.body->finishBuild();
+			}
+		}
+
+		m_deferredBuilds.clear();
 
 		// Restore original locale
 		std::setlocale(LC_NUMERIC, saved_locale);
@@ -611,7 +646,7 @@ namespace hdt
 	void SkyrimSystemCreator::readOrUpdateBone(SkyrimSystem* old_system)
 	{
 		RE::BSFixedString name = getRenamedBone(m_reader->getAttribute("name"));
-		if (m_mesh->findBone(name)) {
+		if (findBoneFromIndex(name)) {
 			logger::warn("Bone {} already exists, skipped", name.c_str());
 			return;
 		}
@@ -655,6 +690,7 @@ namespace hdt
 				bone->readTransform(RESET_PHYSICS);
 
 			m_mesh->m_bones.push_back(hdt::make_smart(bone));
+			indexBone(bone);
 			return bone;
 		}
 		logger::warn("Node named {} doesn't exist, skipped, no bone created", bodyName.c_str());
@@ -691,11 +727,13 @@ namespace hdt
 				auto boneData = &skinData->boneData[boneIdx];
 				auto boundingSphere = BoundingSphere(convertNi(boneData->bound.center), boneData->bound.radius);
 				const RE::BSFixedString& boneName = node->name;
-				auto bone = m_mesh->findBone(boneName);
+				auto bone = static_cast<SkinnedMeshBone*>(findBoneFromIndex(boneName));
 				if (!bone) {
 					auto defaultBoneInfo = getBoneTemplate("");
-					bone = new SkyrimBone(boneName, node->AsNode(), this->m_skeleton, defaultBoneInfo);
-					m_mesh->m_bones.push_back(hdt::make_smart(bone));
+					auto newBone = new SkyrimBone(boneName, node->AsNode(), this->m_skeleton, defaultBoneInfo);
+					m_mesh->m_bones.push_back(hdt::make_smart(newBone));
+					indexBone(newBone);
+					bone = newBone;
 					logger::info("Created bone {} added to body {}, created without default values", boneName.c_str(), name);
 				}
 
@@ -747,11 +785,24 @@ namespace hdt
 
 				SkyrimSystem::BoneData* boneData = reinterpret_cast<SkyrimSystem::BoneData*>(&vertexBlock[j * vSize + boneOffset]);
 
+#if defined(__AVX2__) || defined(__AVX512F__)
+				// batch convert all 4 bone weights FP16 to FP32 through F16C hardware instruction
+				__m128i halfWeights = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(boneData->boneWeights));
+				_mm_storeu_ps(body->m_vertices[j + vertexStart].m_weight, _mm_cvtph_ps(halfWeights));
+				// cleanse garbage NIF data for unused bones
+				for (int k = partition->bonesPerVertex; k < 4; ++k) {
+					body->m_vertices[j + vertexStart].m_weight[k] = 0.0f;
+				}
+#else
+				for (int k = 0; k < partition->bonesPerVertex && k < 4; ++k) {
+					__float32(&body->m_vertices[j + vertexStart].m_weight[k], boneData->boneWeights[k]);
+				}
+#endif
+
 				for (int k = 0; k < partition->bonesPerVertex && k < 4; ++k) {
 					auto localBoneIndex = boneData->boneIndices[k];
 					assert(localBoneIndex < body->m_skinnedBones.size());
 					body->m_vertices[j + vertexStart].m_boneIdx[k] = localBoneIndex + boneStart;
-					float32(&body->m_vertices[j + vertexStart].m_weight[k], boneData->boneWeights[k]);
 				}
 			}
 
@@ -844,8 +895,7 @@ namespace hdt
 			}
 		}
 
-		shape->autoGen();
-		body->finishBuild();
+		m_deferredBuilds.push_back({ body.get(), shape.get() });
 
 		return body;
 	}
@@ -942,7 +992,7 @@ namespace hdt
 			}
 		}
 
-		body->finishBuild();
+		m_deferredBuilds.push_back({ body.get(), nullptr });
 
 		return body;
 	}
@@ -1072,8 +1122,8 @@ namespace hdt
 
 	bool SkyrimSystemCreator::findBones(const RE::BSFixedString& bodyAName, const RE::BSFixedString& bodyBName, SkyrimBone*& bodyA, SkyrimBone*& bodyB)
 	{
-		bodyA = static_cast<SkyrimBone*>(m_mesh->findBone(bodyAName));
-		bodyB = static_cast<SkyrimBone*>(m_mesh->findBone(bodyBName));
+		bodyA = findBoneFromIndex(bodyAName);
+		bodyB = findBoneFromIndex(bodyBName);
 
 		if (!bodyA) {
 			logger::warn("constraint {} <-> {} : bone for bodyA doesn't exist, will try to create it", bodyAName.c_str(), bodyBName.c_str());
